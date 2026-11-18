@@ -4,6 +4,8 @@ Player analytics for Europe's top five leagues in 2024/25 (Premier League, La Li
 
 A Python pipeline runs the model and writes players, clubs, stats and predictions to PostgreSQL. A read-only Express API serves them, and a React app lets you search players, open a profile, see where a club's squad is weakest, compare up to three players and list the biggest over- and under-performers. Similar-player search and a market-value model are offline analyses in the pipeline.
 
+**Live:** https://footstats-beryl.vercel.app (API: https://footstats-api-cv2v.onrender.com/health; the free API sleeps when idle, so the first load can take up to a minute)
+
 **Stack:** Python (pandas, scikit-learn), PostgreSQL, Node.js + Express + TypeScript, React + Vite + TypeScript, Recharts, pytest, Jest + Supertest, Vitest
 
 ## What it does
