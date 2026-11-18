@@ -1,0 +1,20 @@
+level,name,mean_abs_shap
+feature,Age,0.2042
+feature,Minutes,0.1539
+feature,Composite score,0.1401
+feature,League,0.1278
+feature,Position,0.0556
+column,Age,0.1605
+column,Minutes,0.1539
+column,Composite score,0.1401
+column,League: Premier League,0.126
+column,Age squared,0.044
+column,Position: DEF,0.0395
+column,League: Serie A,0.0194
+column,League: Ligue 1,0.0162
+column,Position: WNG,0.0153
+column,Position: GKP,0.0117
+column,League: La Liga,0.0062
+column,Position: STR,0.0045
+column,Position: MID,0.0023
+column,League: Bundesliga,0.0009

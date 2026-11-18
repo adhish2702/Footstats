@@ -1,0 +1,5 @@
+group,players,k,elbow_k,best_silhouette_k,pca_components,pca_variance_kept,gmm_covariance,gmm_best_k_by_bic,kmeans_silhouette,gmm_silhouette,adjusted_rand_index,same_cluster_share,mean_confidence,hybrid_share
+FWD,346,6,6,3,14,0.901,diag,3,0.109,0.049,0.299,0.532,0.873,0.153
+MID,494,5,6,3,15,0.912,diag,4,0.115,0.04,0.168,0.409,0.85,0.209
+DEF,617,4,5,3,14,0.905,diag,4,0.175,0.142,0.636,0.83,0.912,0.1
+GKP,119,4,5,4,4,0.966,tied,4,0.226,0.232,0.132,0.538,0.961,0.034
