@@ -21,6 +21,7 @@ CREATE TABLE clubs (
 CREATE TABLE players (
     id            integer PRIMARY KEY,            -- the pipeline's player id (stable for a given CSV)
     name          text NOT NULL,
+    search_name   text NOT NULL,                  -- lower case, accents removed: "Ødegaard" -> "odegaard"
     club_id       integer NOT NULL REFERENCES clubs (id),
     clubs_played  text NOT NULL,                  -- e.g. "St. Pauli / Freiburg"
     nationality   text,                           -- FBref three-letter code, e.g. "ENG"
@@ -36,7 +37,7 @@ CREATE TABLE players (
 );
 CREATE INDEX players_club_idx ON players (club_id);
 CREATE INDEX players_position_idx ON players (position);
-CREATE INDEX players_name_idx ON players (lower(name));
+CREATE INDEX players_search_idx ON players (search_name);
 
 -- Season totals and per-90 rates. Per-90 columns end in _p90; rates in _pct are 0-100.
 -- The 19 *_p90 columns from shots_p90 to aerials_won_p90 are the playing-style

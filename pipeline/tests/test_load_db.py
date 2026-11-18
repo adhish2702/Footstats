@@ -60,6 +60,31 @@ def test_required_columns_have_no_gaps(tables):
         assert gaps <= nullable.get(name, set()), (name, gaps)
 
 
+# The API's tests check the same pairs (api/tests/text.test.ts), so both sides fold alike.
+SEARCH_KEYS = {
+    "Martin Ødegaard": "martin odegaard",
+    "Đorđe Petrović": "dorde petrovic",
+    "Kylian Mbappé": "kylian mbappe",
+    "Son Heung-min": "son heung-min",
+    "  Obite  N'Dicka ": "obite n'dicka",
+    "Hakan Çalhanoğlu": "hakan calhanoglu",
+    "Þórir Jóhann Helgason": "thorir johann helgason",
+    "Albert Guðmundsson": "albert gudmundsson",
+    "Nico O’Reilly": "nico o'reilly",
+}
+
+
+def test_search_key_folds_accents_and_case():
+    for name, key in SEARCH_KEYS.items():
+        assert load_db.search_key(name) == key, name
+
+
+def test_every_player_has_a_search_name(tables):
+    players = tables["players"]
+    assert players["search_name"].str.len().gt(0).all()
+    assert players["search_name"].str.match(r"^[a-z0-9 '\-.]+$").all()
+
+
 def test_goalkeeping_stats_only_for_goalkeepers(tables):
     keepers = tables["players"]["position"] == "GKP"
     stats = tables["player_stats"]

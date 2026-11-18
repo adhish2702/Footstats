@@ -19,6 +19,7 @@ import hashlib
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,20 @@ def snake(name: str) -> str:
 STYLE_COLUMNS = {f: f"{snake(f)}_p90" for f in FEATURES}
 EXTRA_P90 = {"Tackles won": "tackles_won_p90", "Interceptions": "interceptions_p90",
              "Clearances": "clearances_p90"}
+
+
+# Letters that Unicode does not split into a base letter plus an accent.
+_SPECIAL_LETTERS = str.maketrans({"ø": "o", "Ø": "O", "đ": "d", "Đ": "D", "ł": "l", "Ł": "L",
+                                  "ß": "ss", "æ": "ae", "Æ": "AE", "ı": "i", "ð": "d", "Ð": "D",
+                                  "þ": "th", "Þ": "Th", "’": "'"})
+
+
+def search_key(name: str) -> str:
+    """Lower case with accents removed, for name search: "Martin Ødegaard" -> "martin odegaard".
+    The API folds the search text the same way (api/src/text.ts)."""
+    text = unicodedata.normalize("NFKD", name.translate(_SPECIAL_LETTERS))
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", text.lower()).strip()
 
 
 def file_sha256(path: str | Path) -> str:
@@ -68,6 +83,7 @@ def build_tables(df: pd.DataFrame, report: ModelReport, ratings: pd.Series,
     players = pd.DataFrame({
         "id": df["id"].astype(int),
         "name": df["Player Name"],
+        "search_name": df["Player Name"].map(search_key),
         "club_id": [club_id[(c, l)] for c, l in zip(df["Club"], df["League"])],
         "clubs_played": df["Clubs"],
         "nationality": df["Nationality"].replace("", None),

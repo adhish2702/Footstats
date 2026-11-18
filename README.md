@@ -94,7 +94,7 @@ Tests, from `pipeline`:
 python -m pytest
 ```
 
-There are 136 tests covering data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment for well-known players, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, similarity, the model's held-out performance, the xG benchmark, leakage, penalty bias, scouting filters and every API endpoint.
+There are 138 Python tests (in `pipeline`) covering data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment for well-known players, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, similarity, the model's held-out performance, the xG benchmark, leakage, penalty bias, scouting filters and every API endpoint.
 
 ## Load the database (pipeline)
 
@@ -140,6 +140,37 @@ Each prediction comes from a model that was trained without that player (5-fold 
    ```
 
 To load a hosted database instead (Neon, Supabase), put its connection string in `DATABASE_URL` in `.env`, or pass `--database-url`. `.env` is git-ignored; only `.env.example` is committed.
+
+## REST API (`/api`)
+
+A read-only Express + TypeScript API over the database. It never writes: every database session is set to read-only, and anything other than `GET` returns 405.
+
+```powershell
+cd api
+npm install
+npm run dev        # http://localhost:4000, restarts on changes
+npm test           # Jest + Supertest against TEST_DATABASE_URL
+npm run build; npm start
+```
+
+| Endpoint | Returns |
+|---|---|
+| `GET /players?search=&club=&league=&position=&sort=&page=&pageSize=` | A page of player summaries (club, position, role, rating, prediction) |
+| `GET /players/:id` | Full profile: season stats, prediction with model version, the 19 playing-style features per 90 with percentiles within the position |
+| `GET /clubs?league=` | Clubs with squad sizes |
+| `GET /clubs/:id/gaps` | Each outfield position's expected output against the league average, weakest first |
+| `GET /compare?ids=1,2,3` | Up to three full profiles, in the order given |
+| `GET /insights/over-under?limit=&position=&league=` | Biggest gaps between actual and predicted non-penalty G+A per 90, both ways |
+| `GET /model` | The model version and its stored metrics |
+| `GET /health` | Whether the database is reachable |
+
+- **Search** ignores case and accents (`odegaard` finds Martin Ødegaard). `club` is a club id from `/clubs`. `position` is `GKP`, `DEF`, `MID`, `WNG` or `STR`.
+- **Sort** is one of `name`, `age`, `minutes`, `rating`, `npga`, `predicted`, `actual`, `gap`, with a `-` prefix for descending (default `-rating`). Players without a value (no prediction, unknown age) always sort last.
+- **Pages** are 1-based, 20 players by default and at most 100. A page past the end returns an empty list with the real total.
+- **Squad gaps** use the minutes-weighted average of predicted non-penalty G+A per 90 over players with 900+ minutes. A position is `weak` when it is 10% or more below the league average, `below` when under it, and `missing` when the squad has no qualified player there. Goalkeepers aren't modelled.
+- **Errors** are JSON: `{"error": {"status": 400, "message": "Invalid query parameters", "details": [{"param": "position", "message": "..."}]}}`. Unknown parameters are rejected by name, so a typo like `postion=STR` is a 400 rather than a silently ignored filter.
+
+The 81 API tests run against a small made-up dataset (four clubs, 15 players) loaded into `TEST_DATABASE_URL` before each run, so every expected value can be checked by hand. The setup refuses to reset a database whose name doesn't contain "test".
 
 ## Clustering engine (data-driven archetypes)
 
@@ -211,6 +242,9 @@ Outputs go to `pipeline/outputs/scouting/`: model comparison, value gap per play
 ## Project layout
 
 ```
+api/                    Express + TypeScript REST API (read-only)
+  src/routes/           players, clubs, compare, insights, health and model endpoints
+  tests/                Jest + Supertest tests and the fixture data they seed
 db/
   schema.sql            PostgreSQL tables: clubs, players, player_stats, model_versions, predictions
   setup-local.ps1       creates the local database user and databases
