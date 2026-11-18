@@ -27,7 +27,7 @@ Two parts:
 Ridge regression, a random forest and XGBoost are compared either way, and
 SHAP values explain what drives the chosen model.
 
-Run:  python -m footstats.scouting_models            (from the backend folder)
+Run:  python -m footstats.scouting_models            (from the pipeline folder)
 """
 from __future__ import annotations
 

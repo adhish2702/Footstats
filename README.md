@@ -68,7 +68,7 @@ The striker/winger split agrees with a 2-cluster K-Means on its signals for 345 
 
 ## Run it locally (Windows / PowerShell)
 
-Backend, from the `backend` folder:
+Backend, from the `pipeline` folder:
 
 ```powershell
 python -m venv .venv
@@ -88,23 +88,68 @@ npm run dev
 
 Open http://localhost:5173.
 
-Tests, from `backend`:
+Tests, from `pipeline`:
 
 ```powershell
 python -m pytest
 ```
 
-There are 125 tests covering data loading and transfer merging, the striker/winger and full-back/centre-back splits, role assignment for well-known players, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, similarity, the model's held-out performance, the xG benchmark, leakage, penalty bias, scouting filters and every API endpoint.
+There are 136 tests covering data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment for well-known players, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, similarity, the model's held-out performance, the xG benchmark, leakage, penalty bias, scouting filters and every API endpoint.
+
+## Load the database (pipeline)
+
+`pipeline/load_db.py` reads the FBref CSV, runs the expected goal-contributions model and the role ratings, and writes the results to PostgreSQL. Predictions are computed once here; the API only reads them. Each run rebuilds the tables from [db/schema.sql](db/schema.sql) in one transaction, so a failed run leaves the previous load in place.
+
+| Table | Rows | What's in it |
+|---|---|---|
+| `clubs` | 96 | Name and league |
+| `players` | 2,707 | Club, position (GKP, DEF, MID, WNG, STR), tactical role, age, minutes, role rating (0–99) |
+| `player_stats` | 2,707 | Season totals, per-90 output, the model's 19 playing-style inputs per 90, goalkeeping stats |
+| `model_versions` | 1 | The model's name, version label and the metrics it scored (held-out MAE, baseline, R², CV MAE, xG benchmark) |
+| `predictions` | 1,457 | Predicted and actual non-penalty G+A per 90 and the gap, for outfield players with 900+ minutes |
+
+Each prediction comes from a model that was trained without that player (5-fold out-of-fold), and `in_test_set` marks the 292 held-out players behind the reported metrics. The version label (for example `npga90-ridge-regression-6f12d7fb`) changes whenever the data, the model inputs or the chosen model change.
+
+### Run it against a local PostgreSQL
+
+1. Install PostgreSQL 17 and remember the `postgres` superuser password you set:
+
+   ```powershell
+   winget install PostgreSQL.PostgreSQL.17
+   ```
+
+2. From the repo root, create the `footstats` user and the `footstats` and `footstats_test` databases. If there's no `.env` yet, the script writes one from `.env.example` with a random password. It asks for the `postgres` password once.
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File db\setup-local.ps1
+   ```
+
+3. Load the data, from the `pipeline` folder (with its virtual environment active):
+
+   ```powershell
+   pip install -r requirements.txt
+   python load_db.py
+   ```
+
+   It takes about 15 seconds and prints the model's metrics and the row count of each table. `python load_db.py --dry-run` does everything except write to the database.
+
+4. Check it:
+
+   ```powershell
+   psql "$((Get-Content ..\.env | Select-String '^DATABASE_URL=').Line.Substring(13))" -c "SELECT position, count(*) FROM players GROUP BY 1"
+   ```
+
+To load a hosted database instead (Neon, Supabase), put its connection string in `DATABASE_URL` in `.env`, or pass `--database-url`. `.env` is git-ignored; only `.env.example` is committed.
 
 ## Clustering engine (data-driven archetypes)
 
-The roles above are rule-based. `clustering_engine.py` asks the opposite question: with no football knowledge written in, what groups does the data form? It is an offline analysis and does not change the app's roles or ratings. From `backend`:
+The roles above are rule-based. `clustering_engine.py` asks the opposite question: with no football knowledge written in, what groups does the data form? It is an offline analysis and does not change the app's roles or ratings. From `pipeline`:
 
 ```powershell
 python -m footstats.clustering_engine
 ```
 
-It writes a K-validation plot, a cluster summary (CSV and Markdown), per-player assignments with mixture-model probabilities, and a benchmark table to `backend/outputs/clustering/`. Use `--k MID=6 FWD=5` to force K for a group after looking at the plot.
+It writes a K-validation plot, a cluster summary (CSV and Markdown), per-player assignments with mixture-model probabilities, and a benchmark table to `pipeline/outputs/clustering/`. Use `--k MID=6 FWD=5` to force K for a group after looking at the plot.
 
 The 19 clusters are named in `ARCHETYPES` (for example Target striker, Anchor, Ball-playing centre-back, Sweeper-keeper). Each name is tied to a reference player near the centre of its cluster, not to a cluster number, so the names survive renumbering; if K changes, a cluster without exactly one reference player keeps its number.
 
@@ -113,11 +158,11 @@ The 19 clusters are named in `ARCHETYPES` (for example Target striker, Anchor, B
 - **K:** scored from 3 to 10 by inertia and silhouette. The two disagree (silhouette prefers 3 everywhere except goalkeepers), so the K used is the best silhouette among the elbow and its two neighbours: forwards 6, midfielders 5, defenders 4, goalkeepers 4.
 - **K-Means vs PCA + Gaussian mixture:** the mixture puts 83% of defenders in the same cluster as K-Means, but only 53% of forwards, 54% of goalkeepers and 41% of midfielders, and flags 3–21% of each group as hybrids (best probability under 0.7). Midfield and forward archetypes are not sharply separated in this data.
 
-![K validation](backend/outputs/clustering/k_validation.png)
+![K validation](pipeline/outputs/clustering/k_validation.png)
 
 ## Scouting models (similar players and value gap)
 
-`scouting_models.py` turns the clusters into two recruitment tools. Like the clustering engine it is an offline analysis. From `backend`:
+`scouting_models.py` turns the clusters into two recruitment tools. Like the clustering engine it is an offline analysis. From `pipeline`:
 
 ```powershell
 python -m footstats.scouting_models
@@ -144,10 +189,10 @@ get_undervalued_gems("FWD", cluster_id=None, max_age=24, top_n=15)
 
 To rebuild the values file, download `players.csv.gz` and `player_valuations.csv.gz` from the project into `data/transfermarkt/` and run `python -m footstats.market_values`.
 
-Outputs go to `backend/outputs/scouting/`: model comparison, value gap per player, SHAP importance, two SHAP plots and the gems lists.
+Outputs go to `pipeline/outputs/scouting/`: model comparison, value gap per player, SHAP importance, two SHAP plots and the gems lists.
 
-![SHAP importance](backend/outputs/scouting/shap_importance.png)
-![SHAP effects](backend/outputs/scouting/shap_effects.png)
+![SHAP importance](pipeline/outputs/scouting/shap_importance.png)
+![SHAP effects](pipeline/outputs/scouting/shap_effects.png)
 
 ## API
 
@@ -166,8 +211,12 @@ Outputs go to `backend/outputs/scouting/`: model comparison, value gap per playe
 ## Project layout
 
 ```
-backend/
-  app.py                FastAPI app
+db/
+  schema.sql            PostgreSQL tables: clubs, players, player_stats, model_versions, predictions
+  setup-local.ps1       creates the local database user and databases
+pipeline/
+  load_db.py            runs the model and writes everything to PostgreSQL
+  app.py                FastAPI app (to be replaced by /api)
   footstats/
     data.py             loading, transfer merging, striker/winger split, per-90 helpers
     roles.py            style signals, full-back/centre-back split, role assignment

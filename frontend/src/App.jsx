@@ -50,7 +50,7 @@ export default function App() {
         {overview.error && (
           <p className="notice" role="alert">
             Can't reach the FootStats API. Start it with <code>uvicorn app:app --port 8000</code> in
-            the backend folder, then reload this page.
+            the pipeline folder, then reload this page.
           </p>
         )}
         {tab === "players" && <PlayersView selected={selected} onSelect={setSelected} />}

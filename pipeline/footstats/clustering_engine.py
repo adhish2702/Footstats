@@ -17,7 +17,7 @@ Pipeline, per positional group (FWD, MID, DEF, GKP):
    every player a probability for each cluster.
 6. Summarise each cluster by its most distinctive features and typical players.
 
-Run:  python -m footstats.clustering_engine          (from the backend folder)
+Run:  python -m footstats.clustering_engine          (from the pipeline folder)
 """
 from __future__ import annotations
 

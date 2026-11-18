@@ -27,7 +27,7 @@ and year of birth, in three passes from strict to loose:
 
 A player who cannot be matched confidently is left without a value.
 
-Run:  python -m footstats.market_values              (from the backend folder)
+Run:  python -m footstats.market_values              (from the pipeline folder)
 """
 from __future__ import annotations
 
