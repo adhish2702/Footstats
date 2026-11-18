@@ -129,6 +129,17 @@ def test_version_is_stable(tables):
     assert again == v["version"]
 
 
+def test_describe_hides_credentials():
+    url = "postgresql://user:s3cret@ep-cool-name-123.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+    assert load_db.describe(url) == "ep-cool-name-123.eu-central-1.aws.neon.tech/neondb"
+    assert "s3cret" not in load_db.describe(url)
+
+
+def test_missing_env_file_is_an_error(tmp_path, capsys):
+    assert load_db.main(["--env-file", str(tmp_path / "nope.env")]) == 1
+    assert "No such file" in capsys.readouterr().err
+
+
 def test_dry_run_writes_nothing(capsys):
     assert load_db.main(["--dry-run"]) == 0
     assert "predictions: 1457 rows" in capsys.readouterr().out

@@ -75,7 +75,7 @@ Tests:
 
 | Where | Command | Tests |
 |---|---|---|
-| `pipeline` | `python -m pytest` | 126: data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, the model's held-out performance, the xG benchmark, leakage and penalty bias |
+| `pipeline` | `python -m pytest` | 128: data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, the model's held-out performance, the xG benchmark, leakage and penalty bias |
 | `api` | `npm test` | 81: every endpoint, validation, errors, CORS and read-only access, against a seeded test database |
 | `web` | `npm test` | 8: number formatting, the gauge scale and the formation layout |
 
@@ -173,6 +173,41 @@ React + Vite + TypeScript, with Recharts for the radar charts and hand-drawn SVG
 - **Loading:** pages show skeletons with a scan-line shimmer while data loads, and clear empty and error states. The profile and compare pages load the chart library on demand, so the first page is about 94 kB gzipped.
 
 For a deployed build, set `VITE_API_URL` to the API's address (see `web/.env.example`).
+
+## Deploy (free tiers)
+
+| Part | Host | Configured by |
+|---|---|---|
+| Database | [Neon](https://neon.tech) Postgres | Loaded once from your machine with `load_db.py` |
+| API | [Render](https://render.com) web service | [render.yaml](render.yaml) |
+| Front end | [Vercel](https://vercel.com) | [web/vercel.json](web/vercel.json) |
+
+1. **GitHub.** Push this repository to GitHub. Render and Vercel both deploy from it.
+2. **Neon.** Create a project (PostgreSQL 17, region AWS Europe Central / Frankfurt to match `render.yaml`). Under *Connect*, turn connection pooling off and copy the connection string. Put it in a file called `.env.neon` in the repo root (git-ignored):
+
+   ```
+   DATABASE_URL=postgresql://...neon.tech/neondb?sslmode=require
+   ```
+
+   Then load the data, from `pipeline`:
+
+   ```powershell
+   python load_db.py --env-file ..\.env.neon
+   ```
+
+   It prints the host it writes to (never the password) and the row count of each table.
+3. **Render.** *New → Blueprint*, pick the repository. Render reads `render.yaml` and asks for two values: `DATABASE_URL` (the same Neon string) and `CORS_ORIGIN` (put `https://example.com` for now). When it's live, `https://<service>.onrender.com/health` should return `{"status":"ok","database":"ok"}`.
+4. **Vercel.** *Add New → Project*, import the repository, set **Root Directory** to `web` (Vercel detects Vite), and add the environment variable `VITE_API_URL` = the Render address, no trailing slash. Deploy.
+5. **CORS.** In Render, set `CORS_ORIGIN` to the Vercel production address (for example `https://footstats.vercel.app`) and save; Render redeploys. The API then accepts browser requests from that one origin only, so Vercel preview deployments can't call it.
+
+| Where | Variable | Value |
+|---|---|---|
+| Render | `DATABASE_URL` | Neon connection string (secret) |
+| Render | `CORS_ORIGIN` | Vercel production URL |
+| Render | `NODE_VERSION` | `22` (set by `render.yaml`) |
+| Vercel | `VITE_API_URL` | Render service URL |
+
+The free Render plan sleeps after 15 minutes without traffic and takes up to a minute to wake; the site says so if the first request is slow. Neon's free compute also suspends when idle and resumes on the next query.
 
 ## Clustering engine (data-driven archetypes)
 

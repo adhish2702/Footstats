@@ -1,0 +1,23 @@
+# Render Blueprint for the FootStats API (free plan).
+# In Render: New > Blueprint > pick this repository. Render reads this file,
+# creates the service and asks for the two secret values below.
+services:
+  - type: web
+    name: footstats-api
+    runtime: node
+    plan: free
+    # Keep this in the same region as the Neon database (Frankfurt = AWS eu-central-1).
+    region: frankfurt
+    rootDir: api
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Neon connection string (Dashboard > Connect). Entered in Render, never committed.
+      - key: DATABASE_URL
+        sync: false
+      # The deployed front end only, e.g. https://footstats.vercel.app (no trailing slash).
+      - key: CORS_ORIGIN
+        sync: false

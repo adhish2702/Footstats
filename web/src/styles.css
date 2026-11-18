@@ -305,6 +305,16 @@ abbr.pos-chip {
   color: var(--text);
 }
 
+.wake-banner {
+  max-width: var(--page);
+  margin: 12px auto 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--cyan);
+  background: var(--cyan-soft);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
 main {
   max-width: var(--page);
   margin: 0 auto;

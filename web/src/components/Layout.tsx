@@ -51,6 +51,17 @@ export function Layout() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  // The free API host sleeps when idle; if the first answer is slow, say why.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (model.status !== "loading") {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), 3500);
+    return () => clearTimeout(timer);
+  }, [model.status]);
+
   return (
     <>
       <a href="#main" className="skip-link">Skip to content</a>
@@ -73,6 +84,11 @@ export function Layout() {
           <div className="theme-slot"><ThemeToggle /></div>
         </div>
       </header>
+      {slow && (
+        <p className="wake-banner" role="status">
+          Waking up the API. Free hosting sleeps when nobody has visited for a while, so the first load can take up to a minute.
+        </p>
+      )}
       <main id="main" tabIndex={-1}>
         <Outlet />
       </main>

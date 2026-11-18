@@ -182,16 +182,32 @@ def write(database_url: str, tables: dict[str, pd.DataFrame]) -> dict[str, int]:
     return counts
 
 
+def describe(url: str) -> str:
+    """"host/database" from a connection string, without the user name or password."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    return f"{parts.hostname}/{parts.path.lstrip('/')}"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Load FootStats into PostgreSQL.")
     parser.add_argument("--database-url", help="defaults to DATABASE_URL (from .env if present)")
     parser.add_argument("--csv", default=str(DEFAULT_CSV), help="FBref player CSV")
     parser.add_argument("--dry-run", action="store_true", help="build the tables but write nothing")
+    parser.add_argument("--env-file", help="read DATABASE_URL from this file instead of .env, "
+                                           "e.g. ../.env.neon for the hosted database")
     args = parser.parse_args(argv)
 
     try:
         from dotenv import load_dotenv
-        load_dotenv(ROOT / ".env")
+        if args.env_file:
+            if not Path(args.env_file).is_file():
+                print(f"No such file: {args.env_file}", file=sys.stderr)
+                return 1
+            load_dotenv(args.env_file, override=True)
+        else:
+            load_dotenv(ROOT / ".env")
     except ImportError:
         pass
 
@@ -210,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     if not url:
         print("No database: set DATABASE_URL in .env or pass --database-url.", file=sys.stderr)
         return 1
+    print(f"Writing to {describe(url)}")
     counts = write(url, tables)
     for name, n in counts.items():
         print(f"  {name}: {n} rows")
