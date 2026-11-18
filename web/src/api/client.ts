@@ -38,14 +38,19 @@ export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> 
     throw new ApiError(0, "Can't reach the FootStats API. Check that it is running.");
   }
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    // Anything that isn't the FootStats API's own error shape means the request
+    // went somewhere else (usually a wrong or missing VITE_API_URL): say where.
+    let message = `Request failed (${res.status}) at ${API_URL}${url}. Check the API address (VITE_API_URL).`;
     try {
-      const body = (await res.json()) as ApiErrorBody;
-      message = body.error.details?.length
-        ? `${body.error.message}: ${body.error.details.map((d) => `${d.param} ${d.message}`).join("; ")}`
-        : body.error.message;
+      const body = (await res.json()) as Partial<ApiErrorBody>;
+      const error = body?.error;
+      if (error && typeof error.message === "string") {
+        message = error.details?.length
+          ? `${error.message}: ${error.details.map((d) => `${d.param} ${d.message}`).join("; ")}`
+          : error.message;
+      }
     } catch {
-      // not JSON; keep the generic message
+      // not JSON; keep the message above
     }
     throw new ApiError(res.status, message);
   }
