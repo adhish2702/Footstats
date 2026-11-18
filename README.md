@@ -1,47 +1,55 @@
 # FootStats
 
-Player analytics for Europe's top five leagues in 2024/25 (Premier League, La Liga, Serie A, Bundesliga, Ligue 1): 18 tactical roles worked out from how each player plays, role-specific ratings, and a model that predicts each outfield player's non-penalty goals + assists per 90 from how they play, benchmarked against professional xG.
+Player analytics for Europe's top five leagues in 2024/25: search 2,707 players, open a profile, see where a club's squad is weakest, compare players side by side, and find who is scoring and creating more (or less) than their playing style predicts.
 
-A Python pipeline runs the model and writes players, clubs, stats and predictions to PostgreSQL. A read-only Express API serves them, and a React app lets you search players, open a profile, see where a club's squad is weakest, compare up to three players and list the biggest over- and under-performers. Similar-player search and a market-value model are offline analyses in the pipeline.
+**Live site:** https://footstats-beryl.vercel.app · **API:** https://footstats-api-cv2v.onrender.com/health
 
-**Live:** https://footstats-beryl.vercel.app (API: https://footstats-api-cv2v.onrender.com/health; the free API sleeps when idle, so the first load can take up to a minute)
+The API runs on a free plan that sleeps after about 15 minutes without visitors, so the first page load can take up to a minute; the site says so while it waits.
 
-**Stack:** Python (pandas, scikit-learn), PostgreSQL, Node.js + Express + TypeScript, React + Vite + TypeScript, Recharts, pytest, Jest + Supertest, Vitest
+![Player search](docs/screenshots/players.png)
 
-## What it does
+## Highlights
 
-| Feature | How |
+- **A model that predicts output from playing style.** Ridge regression predicts each outfield player's non-penalty goals + assists per 90 from 19 per-90 playing-style stats (shots, touches in the box, key passes, carries, take-ons…), never seeing goals, assists or xG. On 292 held-out players its mean absolute error is **0.070** against a **0.167** baseline (58% lower), with **R² 0.79**.
+- **Precomputed, not served live.** A Python pipeline trains the model, scores every one of the 1,457 modelled players with a model that never saw them, and loads 5 tables into PostgreSQL in one transaction.
+- **A read-only TypeScript API** with 8 GET endpoints: validated parameters, pagination, accent-insensitive search, JSON errors and CORS limited to the deployed site.
+- **A React + TypeScript front end** with a style radar, a predicted-vs-actual gauge, a 4-3-3 squad-gaps pitch and a three-player compare, in a dark "tactical board" theme that meets 4.5:1 text contrast.
+- **217 automated tests:** 128 in Python (pytest), 81 for the API (Jest + Supertest against a seeded test database) and 8 for the front end (Vitest).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    CSV["FBref CSV<br/>2024/25, top five leagues"] --> PIPE
+    subgraph pipeline ["pipeline/ (Python)"]
+        PIPE["load_db.py<br/>pandas · scikit-learn<br/>roles, ratings, Ridge model"]
+    end
+    PIPE -- "writes once,<br/>one transaction" --> DB[("PostgreSQL<br/>Neon")]
+    DB -- "read-only SQL" --> API["api/<br/>Express + TypeScript<br/>Render"]
+    API -- "JSON over HTTPS<br/>CORS: the site only" --> WEB["web/<br/>React + Vite + TypeScript<br/>Vercel"]
+    WEB --> USER(("Browser"))
+```
+
+| Part | Folder | Built with | Hosted on |
+|---|---|---|---|
+| Pipeline | [pipeline/](pipeline) | Python, pandas, scikit-learn, psycopg | Runs on your machine when the data or model changes |
+| Database | [db/schema.sql](db/schema.sql) | PostgreSQL 17 | Neon (free) |
+| API | [api/](api) | Node.js 22, Express 5, TypeScript, zod, node-postgres | Render (free) |
+| Front end | [web/](web) | React 19, Vite, TypeScript, React Router, Recharts | Vercel (free) |
+
+Predictions are computed by the pipeline, not by the API: the API only reads what the pipeline stored, and every API database session is read-only.
+
+## Screenshots
+
+| Player profile | Squad gaps |
 |---|---|
-| **Roles** | Every player gets one of 18 tactical roles within their position (table below). Each role lists a few things it does more or less of than is typical; the player gets the best fit. Only style signals are used (where touches happen, crosses, throw-ins, switches, tackles by third, offsides, goalkeeper pass length), never goals or assists. |
-| **Player ratings** (0–99, 50 = average) | Each role has its own weights. Weighted per-90 z-scores against players in the same role with 900+ minutes across all five leagues. Goals are non-penalty, so being the designated taker doesn't lift a rating. Low-minute players are shrunk toward average so a cameo can't top the table. |
-| **Strikers vs wingers, full-backs vs centre-backs** | FBref lists forwards as "FW" and defenders as "DF", so each pair is separated by how they play before roles are assigned: box touches, shots per touch and aerial duels against crosses, take-ons and carries for forwards; throw-ins, crosses and final-third touches against clearances, aerial duels and own-box touches for defenders. |
-| **Checking the roles** | K-Means groups each position on the same signals without being told the roles. How often its groups match the assigned roles is reported next to what chance would give. |
-| **Expected goal contributions** | Ridge regression predicting non-penalty goals + assists per 90 from process stats only (shots, touches in the box, key passes, carries, take-ons). It never sees goals, assists or xG. Predictions are computed once by the pipeline and stored in the database. |
-| **Web app** | Player search with filters, player profiles (style radar, predicted-vs-actual gauge, position on a pitch), squad gaps by position on a 4-3-3, a three-player compare and the over/under-performer lists. |
-| **Offline analyses** | Data-driven archetypes (K-Means vs PCA + Gaussian mixture), similar-player search and a market-value model with SHAP, run from the pipeline (sections below). |
+| ![Player profile](docs/screenshots/player.png) | ![Squad gaps](docs/screenshots/squad-gaps.png) |
+| **Compare** | **Over / under-performers** |
+| ![Compare](docs/screenshots/compare.png) | ![Over and under-performers](docs/screenshots/insights.png) |
 
-## Roles
+## The model
 
-| Position | Roles (players with 900+ minutes) |
-|---|---|
-| Goalkeeper | Sweeper-keeper (51), Ball-playing goalkeeper (68) |
-| Defender | Ball-playing centre-back (119), Stopper (168), Wide centre-back (80), Inverted full-back (134), Wing-back (116) |
-| Midfielder | Deep-lying playmaker (153), Ball-winning midfielder (147), Box-to-box midfielder (76), Advanced playmaker (118) |
-| Winger | Inside forward (69), Touchline winger (50), Wide playmaker (60) |
-| Striker | Pressing forward (40), False nine (42), Poacher (54), Target forward (31) |
-
-What each role is rated on follows from what it is for. A poacher is 60% non-penalty goals and npxG; a false nine splits its weight between scoring and creating; a stopper is clearances, blocks and aerial duels; a ball-playing centre-back is mostly progressive passing. The signals are in `roles.py` and the weights in `ratings.py`.
-
-## Data
-
-2,854 player-club rows from FBref covering all 96 clubs in the five leagues for the full 2024/25 season, taken from the CSV in [Math15681/Ballon-d-Or-Predictor-2024-2025-](https://github.com/Math15681/Ballon-d-Or-Predictor-2024-2025-).
-
-- 294 rows belong to players who changed club mid-season. These are merged into one row per player: counting stats are summed, rates are recomputed from their components, and the club with the most minutes is shown. That leaves **2,707 players, 1,576 of them with 900+ minutes**.
-- Consistency checks pass: no player has more shots on target than shots, more tackles won than tackles, or more saves than shots faced.
-
-An earlier version used a Premier League-only CSV whose Shots On Target and Conversion % columns were corrupted. It has been replaced.
-
-## Results
+Predicts an outfield player's **non-penalty goals + assists per 90** from how they play. The 19 inputs are per-90 counts: shots, shots on target, touches, touches in the box, key passes, passes into the box, passes into the final third, progressive passes, progressive carries, progressive receptions, carries into the box, successful take-ons, shot-creating actions, crosses, through balls, miscontrols, times dispossessed, ball recoveries and aerials won, plus position and league indicators. Code: [pipeline/footstats/model.py](pipeline/footstats/model.py).
 
 The model was evaluated on a held-out 20% of outfield players with 900+ minutes (292 of 1,457) that it never saw during training or model selection.
 
@@ -57,17 +65,82 @@ Ridge regression was chosen over a random forest by 5-fold cross-validation on t
 
 **Why non-penalty?** None of the model's inputs show who takes penalties (FBref shot counts exclude them), so when the target included penalty goals, the actual-minus-expected gap had a 0.36 correlation with penalty goals per 90 and the "over-performers" list filled up with penalty takers. With penalties removed from the target and from the rating, that correlation is 0.08, and a test keeps it under 0.15.
 
-Sanity checks on the roles: Erling Haaland, Robert Lewandowski and Jamie Vardy are poachers, Harry Kane a false nine, Serhou Guirassy a target forward, Mohamed Salah and Kylian Mbappé inside forwards, Michael Olise a wide playmaker, Granit Xhaka and Joshua Kimmich deep-lying playmakers, Martin Ødegaard and Kevin De Bruyne advanced playmakers, Virgil van Dijk a ball-playing centre-back, James Tarkowski a stopper, Rico Lewis an inverted full-back and Jeremie Frimpong a wing-back. A test pins 53 such players to their role.
+**How the stored predictions are made.** The prediction shown for each player comes from 5-fold cross-validation over all 1,457 modelled players, so each one is predicted by a model trained without them, and the actual-minus-predicted gap is fair. The 292 players behind the metrics above are flagged `in_test_set` in the database. Each load records a version label (currently `npga90-ridge-regression-6f12d7fb`) that changes whenever the data, the inputs or the chosen model change, alongside the metrics it scored.
 
-Sanity checks on the ratings, each within the player's role: Lewandowski ranks 1st and Haaland 6th of 54 poachers, Kane 2nd of 42 false nines, Mbappé 1st and Salah 3rd of 69 inside forwards, Olise 1st and Ousmane Dembélé 3rd of 60 wide playmakers, Kimmich 1st of 153 deep-lying playmakers and De Bruyne 2nd of 118 advanced playmakers.
+Goalkeepers and players under 900 minutes are not modelled: they appear in the app with their stats and rating but no prediction.
 
-**How distinct are the roles?** K-Means, given the same signals but not the roles, matches the assigned role for 66% of qualified players (goalkeepers 69%, defenders 73%, midfielders 58%, wingers 59%, strikers 65%). Random groups of the same sizes would match 21–51% depending on the position. That is well above chance and well short of perfect, with silhouette scores of 0.11–0.28: roles blend into each other rather than forming hard groups, and a player near a boundary could reasonably carry either label.
+## API reference
 
-The striker/winger split agrees with a 2-cluster K-Means on its signals for 345 of 346 qualified forwards. Hybrid forwards sit near the line: Mbappé is classed as a winger because he dribbles and carries like one.
+Base URL: `https://footstats-api-cv2v.onrender.com` (locally `http://localhost:4000`). Every endpoint is `GET` and returns JSON; anything else returns 405.
+
+| Endpoint | Parameters | Returns |
+|---|---|---|
+| `GET /players` | `search`, `club`, `league`, `position`, `sort`, `page`, `pageSize` | A page of player summaries |
+| `GET /players/:id` | | One player's full profile |
+| `GET /clubs` | `league` | All clubs, with squad sizes |
+| `GET /clubs/:id/gaps` | | Each outfield position's expected output against the league average, weakest first |
+| `GET /compare` | `ids` (1–3 player ids, comma-separated) | Full profiles, in the order given |
+| `GET /insights/over-under` | `limit` (1–50, default 10), `position`, `league` | The biggest positive and negative gaps between actual and predicted output |
+| `GET /model` | | The model version and its stored metrics |
+| `GET /health` | | `{"status":"ok","database":"ok"}` when the database is reachable |
+
+| Parameter | Values |
+|---|---|
+| `search` | Part of a name, 1–50 characters. Case and accents are ignored: `odegaard` finds Martin Ødegaard. |
+| `club` | A club id from `GET /clubs` |
+| `league` | `Premier League`, `La Liga`, `Serie A`, `Bundesliga`, `Ligue 1` |
+| `position` | `GKP`, `DEF`, `MID`, `WNG`, `STR` (over-under: outfield positions only) |
+| `sort` | `name`, `age`, `minutes`, `rating`, `npga`, `predicted`, `actual`, `gap`; prefix `-` for descending. Default `-rating`. Missing values sort last. |
+| `page`, `pageSize` | 1-based page (default 1) and page size (default 20, at most 100). A page past the end returns an empty list with the real total. |
+
+Example: `GET /players?search=odegaard&pageSize=1`
+
+```json
+{
+  "data": [{
+    "id": 1597, "name": "Martin Ødegaard",
+    "club": { "id": 57, "name": "Arsenal", "league": "Premier League" },
+    "position": "MID", "role": "Advanced playmaker", "age": 25, "minutes": 2325,
+    "qualified": true, "rating": 68, "npgaP90": 0.387,
+    "prediction": { "predictedP90": 0.523, "actualP90": 0.387, "gapP90": -0.136 }
+  }],
+  "page": 1, "pageSize": 1, "total": 1, "totalPages": 1, "sort": "-rating"
+}
+```
+
+**Squad gaps** use the minutes-weighted average of predicted non-penalty G+A per 90 over players with 900+ minutes, compared with the same average for that position across the club's league. A position is `weak` when it is 10% or more below the league average, `below` when under it, `above` otherwise, and `missing` when the squad has no qualified player there.
+
+**Errors** always have the same shape, and unknown parameters are rejected by name, so a typo like `postion=STR` is a 400 rather than a silently ignored filter:
+
+```json
+{ "error": { "status": 400, "message": "Invalid query parameters",
+  "details": [{ "param": "position", "message": "Invalid option: expected one of \"GKP\"|\"DEF\"|\"MID\"|\"WNG\"|\"STR\"" }] } }
+```
+
+Not found is a 404 (`{"error":{"status":404,"message":"No player with id 999"}}`), and anything unexpected is a 500 with a generic message; the details go to the server log only.
+
+## Front end (`/web`)
+
+React + Vite + TypeScript, with Recharts for the radar charts and hand-drawn SVG for the gauge and pitches.
+
+| Page | What it shows |
+|---|---|
+| Players (`/`) | Search by name (accents ignored) with league, club, position and sort filters, 20 per page. Filters live in the URL, so a filtered list can be shared. |
+| Player (`/players/:id`) | Role rating, output, a radar of eight playing-style percentiles, all 19 model inputs with percentile bars, a predicted-vs-actual gauge and the position on a mini pitch. |
+| Squad gaps (`/clubs`, `/clubs/:id`) | The squad as a 4-3-3 seen from above. Each node is outlined by how that position's expected output compares with the league: green above, grey below, pulsing magenta when weak or missing. |
+| Compare (`/compare?ids=`) | Up to three players: an overlaid radar and a side-by-side table with the best value in each row marked. |
+| Over / under (`/insights`) | The biggest gaps between actual and predicted output, filterable by position and league, with the model's real metrics. |
+
+- **Design:** dark by default (a light theme is in the header), a faint tactical-board grid drawn in SVG behind everything, glass panels with cut corners and a glowing border on hover, Barlow Condensed for headings and numbers and Inter for text. Green is for primary actions and good numbers, cyan for data highlights, magenta only for warnings and under-performance.
+- **Accessibility:** all text is at least 4.5:1 against its background in both themes (checked, lowest 4.81:1). Good and bad are never shown by colour alone: every verdict has an icon and a word, and the compare radar gives each player a different line style and marker as well as a colour. Charts have text equivalents (the feature list, the compare table). Motion is 150–250 ms and switches off with the system's reduce-motion setting.
+- **No trademarks:** no league or club logos, crests, kits or player photos. Clubs appear as neutral text badges and players as initials.
+- **Loading:** pages show skeletons with a scan-line shimmer while data loads, and clear empty and error states. The profile and compare pages load the chart library on demand, so the first page is about 94 kB gzipped.
+
+For a deployed build, set `VITE_API_URL` to the API's address (see `web/.env.example`).
 
 ## Run it locally (Windows / PowerShell)
 
-Three parts, each in its own terminal: load the database once, then start the API and the web app.
+Prerequisites: Python 3.11+, Node.js 20+ and PostgreSQL 17.
 
 1. **Database and pipeline:** install PostgreSQL, create the databases and load them (steps in the next section).
 2. **API**, from `api`: `npm install`, then `npm run dev` (http://localhost:4000).
@@ -126,56 +199,6 @@ Each prediction comes from a model that was trained without that player (5-fold 
 
 To load a hosted database instead (Neon, Supabase), put its connection string in `DATABASE_URL` in `.env`, or pass `--database-url`. `.env` is git-ignored; only `.env.example` is committed.
 
-## REST API (`/api`)
-
-A read-only Express + TypeScript API over the database. It never writes: every database session is set to read-only, and anything other than `GET` returns 405.
-
-```powershell
-cd api
-npm install
-npm run dev        # http://localhost:4000, restarts on changes
-npm test           # Jest + Supertest against TEST_DATABASE_URL
-npm run build; npm start
-```
-
-| Endpoint | Returns |
-|---|---|
-| `GET /players?search=&club=&league=&position=&sort=&page=&pageSize=` | A page of player summaries (club, position, role, rating, prediction) |
-| `GET /players/:id` | Full profile: season stats, prediction with model version, the 19 playing-style features per 90 with percentiles within the position |
-| `GET /clubs?league=` | Clubs with squad sizes |
-| `GET /clubs/:id/gaps` | Each outfield position's expected output against the league average, weakest first |
-| `GET /compare?ids=1,2,3` | Up to three full profiles, in the order given |
-| `GET /insights/over-under?limit=&position=&league=` | Biggest gaps between actual and predicted non-penalty G+A per 90, both ways |
-| `GET /model` | The model version and its stored metrics |
-| `GET /health` | Whether the database is reachable |
-
-- **Search** ignores case and accents (`odegaard` finds Martin Ødegaard). `club` is a club id from `/clubs`. `position` is `GKP`, `DEF`, `MID`, `WNG` or `STR`.
-- **Sort** is one of `name`, `age`, `minutes`, `rating`, `npga`, `predicted`, `actual`, `gap`, with a `-` prefix for descending (default `-rating`). Players without a value (no prediction, unknown age) always sort last.
-- **Pages** are 1-based, 20 players by default and at most 100. A page past the end returns an empty list with the real total.
-- **Squad gaps** use the minutes-weighted average of predicted non-penalty G+A per 90 over players with 900+ minutes. A position is `weak` when it is 10% or more below the league average, `below` when under it, and `missing` when the squad has no qualified player there. Goalkeepers aren't modelled.
-- **Errors** are JSON: `{"error": {"status": 400, "message": "Invalid query parameters", "details": [{"param": "position", "message": "..."}]}}`. Unknown parameters are rejected by name, so a typo like `postion=STR` is a 400 rather than a silently ignored filter.
-
-The 81 API tests run against a small made-up dataset (four clubs, 15 players) loaded into `TEST_DATABASE_URL` before each run, so every expected value can be checked by hand. The setup refuses to reset a database whose name doesn't contain "test".
-
-## Web app (`/web`)
-
-React + Vite + TypeScript, with Recharts for the radar charts and hand-drawn SVG for the gauge and pitches.
-
-| Page | What it shows |
-|---|---|
-| Players (`/`) | Search by name (accents ignored) with league, club, position and sort filters, 20 per page. Filters live in the URL, so a filtered list can be shared. |
-| Player (`/players/:id`) | Role rating, output, a radar of eight playing-style percentiles, all 19 model inputs with percentile bars, a predicted-vs-actual gauge and the position on a mini pitch. |
-| Squad gaps (`/clubs`, `/clubs/:id`) | The squad as a 4-3-3 seen from above. Each node is outlined by how that position's expected output compares with the league: green above, grey below, pulsing magenta when weak or missing. |
-| Compare (`/compare?ids=`) | Up to three players: an overlaid radar and a side-by-side table with the best value in each row marked. |
-| Over / under (`/insights`) | The biggest gaps between actual and predicted output, filterable by position and league, with the model's real metrics. |
-
-- **Design:** dark by default (a light theme is in the header), a faint tactical-board grid drawn in SVG behind everything, glass panels with cut corners and a glowing border on hover, Barlow Condensed for headings and numbers and Inter for text. Green is for primary actions and good numbers, cyan for data highlights, magenta only for warnings and under-performance.
-- **Accessibility:** all text is at least 4.5:1 against its background in both themes (checked, lowest 4.81:1). Good and bad are never shown by colour alone: every verdict has an icon and a word, and the compare radar gives each player a different line style and marker as well as a colour. Charts have text equivalents (the feature list, the compare table). Motion is 150–250 ms and switches off with the system's reduce-motion setting.
-- **No trademarks:** no league or club logos, crests, kits or player photos. Clubs appear as neutral text badges and players as initials.
-- **Loading:** pages show skeletons with a scan-line shimmer while data loads, and clear empty and error states. The profile and compare pages load the chart library on demand, so the first page is about 94 kB gzipped.
-
-For a deployed build, set `VITE_API_URL` to the API's address (see `web/.env.example`).
-
 ## Deploy (free tiers)
 
 | Part | Host | Configured by |
@@ -211,7 +234,46 @@ For a deployed build, set `VITE_API_URL` to the API's address (see `web/.env.exa
 
 The free Render plan sleeps after 15 minutes without traffic and takes up to a minute to wake; the site says so if the first request is slow. Neon's free compute also suspends when idle and resumes on the next query.
 
-## Clustering engine (data-driven archetypes)
+## Data
+
+2,854 player-club rows from FBref covering all 96 clubs in the five leagues for the full 2024/25 season, taken from the CSV in [Math15681/Ballon-d-Or-Predictor-2024-2025-](https://github.com/Math15681/Ballon-d-Or-Predictor-2024-2025-).
+
+- 294 rows belong to players who changed club mid-season. These are merged into one row per player: counting stats are summed, rates are recomputed from their components, and the club with the most minutes is shown. That leaves **2,707 players, 1,576 of them with 900+ minutes**.
+- Consistency checks pass: no player has more shots on target than shots, more tackles won than tackles, or more saves than shots faced.
+
+An earlier version used a Premier League-only CSV whose Shots On Target and Conversion % columns were corrupted. It has been replaced.
+
+## Roles and ratings
+
+| Part | How it works |
+|---|---|
+| **Roles** | Every player gets one of 18 tactical roles within their position (table below). Each role lists a few things it does more or less of than is typical; the player gets the best fit. Only style signals are used (where touches happen, crosses, throw-ins, switches, tackles by third, offsides, goalkeeper pass length), never goals or assists. |
+| **Player ratings** (0–99, 50 = average) | Each role has its own weights. Weighted per-90 z-scores against players in the same role with 900+ minutes across all five leagues. Goals are non-penalty, so being the designated taker doesn't lift a rating. Low-minute players are shrunk toward average so a cameo can't top the table. |
+| **Strikers vs wingers, full-backs vs centre-backs** | FBref lists forwards as "FW" and defenders as "DF", so each pair is separated by how they play before roles are assigned: box touches, shots per touch and aerial duels against crosses, take-ons and carries for forwards; throw-ins, crosses and final-third touches against clearances, aerial duels and own-box touches for defenders. |
+| **Checking the roles** | K-Means groups each position on the same signals without being told the roles. How often its groups match the assigned roles is reported next to what chance would give. |
+
+| Position | Roles (players with 900+ minutes) |
+|---|---|
+| Goalkeeper | Sweeper-keeper (51), Ball-playing goalkeeper (68) |
+| Defender | Ball-playing centre-back (119), Stopper (168), Wide centre-back (80), Inverted full-back (134), Wing-back (116) |
+| Midfielder | Deep-lying playmaker (153), Ball-winning midfielder (147), Box-to-box midfielder (76), Advanced playmaker (118) |
+| Winger | Inside forward (69), Touchline winger (50), Wide playmaker (60) |
+| Striker | Pressing forward (40), False nine (42), Poacher (54), Target forward (31) |
+
+What each role is rated on follows from what it is for. A poacher is 60% non-penalty goals and npxG; a false nine splits its weight between scoring and creating; a stopper is clearances, blocks and aerial duels; a ball-playing centre-back is mostly progressive passing. The signals are in `roles.py` and the weights in `ratings.py`.
+
+Sanity checks on the roles: Erling Haaland, Robert Lewandowski and Jamie Vardy are poachers, Harry Kane a false nine, Serhou Guirassy a target forward, Mohamed Salah and Kylian Mbappé inside forwards, Michael Olise a wide playmaker, Granit Xhaka and Joshua Kimmich deep-lying playmakers, Martin Ødegaard and Kevin De Bruyne advanced playmakers, Virgil van Dijk a ball-playing centre-back, James Tarkowski a stopper, Rico Lewis an inverted full-back and Jeremie Frimpong a wing-back. A test pins 53 such players to their role.
+
+Sanity checks on the ratings, each within the player's role: Lewandowski ranks 1st and Haaland 6th of 54 poachers, Kane 2nd of 42 false nines, Mbappé 1st and Salah 3rd of 69 inside forwards, Olise 1st and Ousmane Dembélé 3rd of 60 wide playmakers, Kimmich 1st of 153 deep-lying playmakers and De Bruyne 2nd of 118 advanced playmakers.
+
+**How distinct are the roles?** K-Means, given the same signals but not the roles, matches the assigned role for 66% of qualified players (goalkeepers 69%, defenders 73%, midfielders 58%, wingers 59%, strikers 65%). Random groups of the same sizes would match 21–51% depending on the position. That is well above chance and well short of perfect, with silhouette scores of 0.11–0.28: roles blend into each other rather than forming hard groups, and a player near a boundary could reasonably carry either label.
+
+The striker/winger split agrees with a 2-cluster K-Means on its signals for 345 of 346 qualified forwards. Hybrid forwards sit near the line: Mbappé is classed as a winger because he dribbles and carries like one.
+## Offline analyses
+
+These run from the `pipeline` folder and write files to `pipeline/outputs/`; they are not part of the web app.
+
+### Clustering engine (data-driven archetypes)
 
 The roles above are rule-based. `clustering_engine.py` asks the opposite question: with no football knowledge written in, what groups does the data form? It is an offline analysis and does not change the app's roles or ratings. From `pipeline`:
 
@@ -230,7 +292,7 @@ The 19 clusters are named in `ARCHETYPES` (for example Target striker, Anchor, B
 
 ![K validation](pipeline/outputs/clustering/k_validation.png)
 
-## Scouting models (similar players and value gap)
+### Scouting models (similar players and value gap)
 
 `scouting_models.py` turns the clusters into two recruitment tools. Like the clustering engine it is an offline analysis. From `pipeline`:
 
@@ -304,3 +366,10 @@ data/                   FBref 2024/25 top-five-league player stats CSV, matched 
 - **FBref positions are broad.** Wide forwards FBref lists as midfielders first (Ademola Lookman, Amad Diallo) are treated as midfielders and mostly land in box-to-box, where they top the ratings; Aurélien Tchouaméni is listed as a defender.
 - **Ratings across roles are relative.** A 75 means "well above the typical player in that role", so a 75 poacher and a 75 target forward are not directly comparable, and the smaller roles (31–42 strikers each) are noisier.
 - **Ratings are per 90.** A striker with 1,500 very productive minutes can outrank one who sustained a slightly lower rate over 2,700; the shrinkage toward average only partly offsets this.
+
+## Credits and data use
+
+- **Player statistics:** FBref, 2024/25, from the CSV in [Math15681/Ballon-d-Or-Predictor-2024-2025-](https://github.com/Math15681/Ballon-d-Or-Predictor-2024-2025-). The underlying data belongs to its providers; this project is a non-commercial portfolio piece.
+- **Market values** (offline analysis only): [transfermarkt-datasets](https://github.com/dcaribou/transfermarkt-datasets), CC0.
+- **Fonts:** Inter and Barlow Condensed (SIL Open Font License), bundled via Fontsource.
+- No league or club logos, crests, kits or player photos are used anywhere: clubs are text badges and players are initials.
