@@ -1590,3 +1590,34 @@ a.club-badge:hover {
     display: none;
   }
 }
+
+/* ---- goalkeepers (goals prevented) ---------------------------------------------------- */
+.verdict__tag {
+  margin-left: 2px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+}
+
+.vs-bar--wide {
+  grid-template-columns: 76px 1fr 48px;
+  font-size: 0.85rem;
+}
+
+/* A bar that grows left (negative) or right (positive) from a centre line. */
+.bar--centred {
+  overflow: visible;
+}
+
+.bar--centred::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--text-3);
+}

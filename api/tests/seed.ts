@@ -19,6 +19,8 @@ interface SeedPlayer {
   /** [predicted, actual] non-penalty G+A per 90; only for qualified outfield players. */
   prediction?: [number, number];
   npga?: number;
+  /** Goalkeepers: [goals conceded, goals prevented] for the season. */
+  keeper?: [number, number];
 }
 
 export const PLAYERS: SeedPlayer[] = [
@@ -26,7 +28,7 @@ export const PLAYERS: SeedPlayer[] = [
   { id: 2, name: "Ben Carter", club: 1, position: "WNG", role: "Inside forward", age: 22, minutes: 2000, rating: 65, prediction: [0.4, 0.3] },
   { id: 3, name: "Chris Doyle", club: 1, position: "MID", role: "Advanced playmaker", age: 27, minutes: 2200, rating: 58, prediction: [0.3, 0.35] },
   { id: 4, name: "Dan Evans", club: 1, position: "DEF", role: "Wing-back", age: 29, minutes: 2700, rating: 55, prediction: [0.1, 0.08] },
-  { id: 5, name: "Eli Ford", club: 1, position: "GKP", role: "Sweeper-keeper", age: 31, minutes: 3000, rating: 60, npga: 0 },
+  { id: 5, name: "Eli Ford", club: 1, position: "GKP", role: "Sweeper-keeper", age: 31, minutes: 3000, rating: 60, npga: 0, keeper: [30, 3.2] },
   { id: 6, name: "Finn Grant", club: 1, position: "MID", role: "Box-to-box midfielder", age: 19, minutes: 400, rating: 48, npga: 0.2 },
   { id: 7, name: "Gary Hill", club: 2, position: "STR", role: "Target forward", age: 30, minutes: 2400, rating: 50, prediction: [0.5, 0.2] },
   { id: 8, name: "Hugo Ince", club: 2, position: "WNG", role: "Touchline winger", age: 25, minutes: 1800, rating: 52, prediction: [0.45, 0.5] },
@@ -37,6 +39,7 @@ export const PLAYERS: SeedPlayer[] = [
   { id: 13, name: "Marc Nadal", club: 3, position: "DEF", role: "Inverted full-back", age: 21, minutes: 1500, rating: 57, prediction: [0.12, 0.15] },
   { id: 14, name: "Nico Ortega", club: 4, position: "WNG", role: "Wide playmaker", age: 20, minutes: 2000, rating: 61, prediction: [0.3, 0.25] },
   { id: 15, name: "Óscar Peña", club: 4, position: "STR", role: "Poacher", age: null, minutes: 600, rating: 47, npga: 0.4 },
+  { id: 16, name: "Pavel Quinn", club: 2, position: "GKP", role: "Ball-playing goalkeeper", age: 33, minutes: 2700, rating: 45, npga: 0, keeper: [40, -4] },
 ];
 
 export const MODEL = {
@@ -83,7 +86,7 @@ export async function seed(client: Client): Promise<void> {
       npga_p90: npga, npxg_p90: 0.3, xag_p90: 0.1,
       tackles_won_p90: 1.1, interceptions_p90: 0.9, clearances_p90: 2.5, pass_accuracy_pct: 80 + p.id,
       saves_pct: isGk ? 71.5 : null, clean_sheets: isGk ? 12 : null,
-      goals_conceded: isGk ? 30 : null, goals_prevented: isGk ? 3.2 : null,
+      goals_conceded: p.keeper ? p.keeper[0] : null, goals_prevented: p.keeper ? p.keeper[1] : null,
     };
     STYLE_FEATURES.forEach((f, i) => { stats[f.key] = styleValue(p.id, i); });
     await insert(client, "player_stats", stats);

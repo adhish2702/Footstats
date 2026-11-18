@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import type { PositionGap } from "../api/types";
+import type { KeeperGap, PositionGap } from "../api/types";
 import { POSITION_NAMES, STATUS_TEXT, initials } from "../lib/format";
 import { formationSlots } from "../lib/formation";
 import { PitchLines } from "./svg";
@@ -10,11 +10,13 @@ const lastName = (name: string) => name.trim().split(/\s+/).at(-1) ?? name;
  * The club's squad as a 4-3-3 seen from above. Each node is a player slot,
  * outlined by how that position compares with the league: green above, grey
  * below, magenta and pulsing when weak or when no qualified player plays there.
+ * Outfield slots are judged by the model; the goalkeeper by goals prevented.
  */
-export function FormationPitch({ positions, club }: { positions: PositionGap[]; club: string }) {
+export function FormationPitch({ positions, goalkeeper, club }: { positions: PositionGap[]; goalkeeper?: KeeperGap; club: string }) {
   const navigate = useNavigate();
-  const slots = formationSlots(positions);
-  const summary = positions.map((p) => `${POSITION_NAMES[p.position]}: ${STATUS_TEXT[p.status]}`).join("; ");
+  const slots = formationSlots(positions, goalkeeper);
+  const summary = [...(goalkeeper ? [goalkeeper] : []), ...positions]
+    .map((p) => `${POSITION_NAMES[p.position]}: ${STATUS_TEXT[p.status]}`).join("; ");
   // The pitch is 68 x 105; slot coordinates are percentages.
   const X = (x: number) => (x / 100) * 68;
   const Y = (y: number) => (y / 100) * 105;

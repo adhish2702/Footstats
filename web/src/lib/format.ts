@@ -54,6 +54,16 @@ export function gapVerdict(gap: number, typicalError = 0.07): "over" | "under" |
   return "level";
 }
 
+/**
+ * Goalkeepers: goals prevented per 90 (post-shot xG minus goals conceded).
+ * Within 0.05 either way (about a third of the spread between keepers) is level.
+ */
+export const KEEPER_LEVEL = 0.05;
+
+export function keeperVerdict(preventedP90: number): "over" | "under" | "level" {
+  return gapVerdict(preventedP90, KEEPER_LEVEL);
+}
+
 export const STATUS_TEXT: Record<GapStatus, string> = {
   missing: "No qualified player",
   weak: "Weak",

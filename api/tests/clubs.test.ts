@@ -7,7 +7,7 @@ describe("GET /clubs", () => {
       { id: 3, name: "Ciudad Azul", league: "La Liga", players: 3, playersWithPrediction: 3 },
       { id: 4, name: "Puerto Viejo", league: "La Liga", players: 2, playersWithPrediction: 1 },
       { id: 1, name: "North Bank", league: "Premier League", players: 6, playersWithPrediction: 4 },
-      { id: 2, name: "Riverside", league: "Premier League", players: 4, playersWithPrediction: 4 },
+      { id: 2, name: "Riverside", league: "Premier League", players: 5, playersWithPrediction: 4 },
     ]);
   });
 
@@ -73,6 +73,33 @@ describe("GET /clubs/:id/gaps", () => {
     const res = await api().get("/clubs/4/gaps").expect(200);
     const status = Object.fromEntries(res.body.positions.map((p: any) => [p.position, p.status]));
     expect(status).toEqual({ DEF: "missing", MID: "missing", STR: "missing", WNG: "above" });
+  });
+
+  // Premier League keepers, goals prevented per 90 (post-shot xG minus goals conceded):
+  //   Eli Ford (North Bank)    3.2 in 3,000 min = +0.096
+  //   Pavel Quinn (Riverside)  -4 in 2,700 min  = -0.133
+  //   league: (3.2 - 4) / 5,700 x 90           = -0.013
+  it("compares the goalkeepers on goals prevented, not the model", async () => {
+    const north = (await api().get("/clubs/1/gaps").expect(200)).body.goalkeeper;
+    expect(north).toMatchObject({
+      position: "GKP", status: "above", squadPlayers: 1, squadMinutes: 3000,
+      squadPreventedP90: 0.096, leaguePreventedP90: -0.013, differenceP90: 0.109,
+      players: [{ id: 5, name: "Eli Ford", minutes: 3000, preventedP90: 0.096, concededP90: 0.9, expectedConcededP90: 0.996 }],
+    });
+    expect(north.measure).toMatch(/post-shot xG/);
+    const river = (await api().get("/clubs/2/gaps").expect(200)).body;
+    expect(river.goalkeeper).toMatchObject({ status: "weak", squadPreventedP90: -0.133, differenceP90: -0.121 });
+    // The outfield ranking is unchanged: goalkeepers are reported alongside it.
+    expect(river.weakest).toBe("DEF");
+    expect(river.positions.map((p: any) => p.position)).not.toContain("GKP");
+    expect(river.method).toMatch(/goals prevented/);
+  });
+
+  it("marks the goalkeeper missing when nobody qualifies", async () => {
+    const res = await api().get("/clubs/3/gaps").expect(200);
+    expect(res.body.goalkeeper).toMatchObject({
+      status: "missing", squadPlayers: 0, squadMinutes: 0, squadPreventedP90: null, leaguePreventedP90: null, players: [],
+    });
   });
 
   it("returns 404 for a club that doesn't exist", async () => {

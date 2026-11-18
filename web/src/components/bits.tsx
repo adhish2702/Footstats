@@ -1,9 +1,9 @@
 // Small presentational pieces used across pages.
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { ClubRef, GapStatus, Position, Prediction } from "../api/types";
+import type { ClubRef, GapStatus, KeeperVsXg, Position, Prediction } from "../api/types";
 import { useCountUp } from "../hooks/motion";
-import { POSITION_NAMES, STATUS_TEXT, gapVerdict, initials, signed } from "../lib/format";
+import { POSITION_NAMES, STATUS_TEXT, gapVerdict, initials, keeperVerdict, signed } from "../lib/format";
 import { AlertIcon, DownIcon, LevelIcon, UpIcon } from "./icons";
 
 /** Glass panel with cut corners. `as="link"` makes the whole panel a link. */
@@ -66,6 +66,30 @@ export function GapVerdict({ prediction, typicalError, compact = false }: {
       <Icon size={compact ? 11 : 13} />
       <span className="num">{signed(prediction.gapP90)}</span>
       <span className={compact ? "sr-only" : ""}>{word}</span>
+    </span>
+  );
+}
+
+/**
+ * The "vs expected" verdict for any player: the model's gap for outfield
+ * players, goals prevented against post-shot xG for goalkeepers.
+ */
+export function VsExpected({ player, typicalError, compact = false }: {
+  player: { prediction: Prediction | null; keeper: KeeperVsXg | null }; typicalError?: number; compact?: boolean;
+}) {
+  if (player.prediction || !player.keeper) {
+    return <GapVerdict prediction={player.prediction} typicalError={typicalError} compact={compact} />;
+  }
+  const verdict = keeperVerdict(player.keeper.preventedP90);
+  const Icon = verdict === "over" ? UpIcon : verdict === "under" ? DownIcon : LevelIcon;
+  const word = verdict === "over" ? "Prevented" : verdict === "under" ? "Conceded extra" : "Level";
+  return (
+    <span className={`verdict verdict--${verdict}`}
+      title="Goalkeeper: goals prevented per 90, post-shot xG faced minus goals conceded">
+      <Icon size={compact ? 11 : 13} />
+      <span className="num">{signed(player.keeper.preventedP90)}</span>
+      <span className={compact ? "sr-only" : ""}>{word}</span>
+      <span className="verdict__tag">GK</span>
     </span>
   );
 }

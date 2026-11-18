@@ -14,7 +14,7 @@ The API runs on a free plan that sleeps after about 15 minutes without visitors,
 - **Precomputed, not served live.** A Python pipeline trains the model, scores every one of the 1,457 modelled players with a model that never saw them, and loads 5 tables into PostgreSQL in one transaction.
 - **A read-only TypeScript API** with 8 GET endpoints: validated parameters, pagination, accent-insensitive search, JSON errors and CORS limited to the deployed site.
 - **A React + TypeScript front end** with a style radar, a predicted-vs-actual gauge, a 4-3-3 squad-gaps pitch and a three-player compare, in a dark "tactical board" theme that meets 4.5:1 text contrast.
-- **217 automated tests:** 128 in Python (pytest), 81 for the API (Jest + Supertest against a seeded test database) and 8 for the front end (Vitest).
+- **222 automated tests:** 128 in Python (pytest), 84 for the API (Jest + Supertest against a seeded test database) and 10 for the front end (Vitest).
 
 ## Architecture
 
@@ -67,7 +67,9 @@ Ridge regression was chosen over a random forest by 5-fold cross-validation on t
 
 **How the stored predictions are made.** The prediction shown for each player comes from 5-fold cross-validation over all 1,457 modelled players, so each one is predicted by a model trained without them, and the actual-minus-predicted gap is fair. The 292 players behind the metrics above are flagged `in_test_set` in the database. Each load records a version label (currently `npga90-ridge-regression-6f12d7fb`) that changes whenever the data, the inputs or the chosen model change, alongside the metrics it scored.
 
-Goalkeepers and players under 900 minutes are not modelled: they appear in the app with their stats and rating but no prediction.
+Players under 900 minutes are not modelled: they appear in the app with their stats and rating but no prediction.
+
+**Goalkeepers** aren't covered either, because goals + assists say almost nothing about a keeper. Instead the app compares them on **goals prevented**: the post-shot xG of the shots on target they faced (FBref/Opta) minus the goals they conceded, per 90. It's a professional expected-goals measure, not this project's model, and it's labelled that way everywhere. Across the 119 keepers with 900+ minutes it averages +0.01 per 90 with a standard deviation of 0.17; a keeper within 0.05 either way is shown as level.
 
 ## API reference
 
@@ -90,7 +92,7 @@ Base URL: `https://footstats-api-cv2v.onrender.com` (locally `http://localhost:4
 | `club` | A club id from `GET /clubs` |
 | `league` | `Premier League`, `La Liga`, `Serie A`, `Bundesliga`, `Ligue 1` |
 | `position` | `GKP`, `DEF`, `MID`, `WNG`, `STR` (over-under: outfield positions only) |
-| `sort` | `name`, `age`, `minutes`, `rating`, `npga`, `predicted`, `actual`, `gap`; prefix `-` for descending. Default `-rating`. Missing values sort last. |
+| `sort` | `name`, `age`, `minutes`, `rating`, `npga`, `predicted`, `actual`, `gap`, `prevented` (goalkeepers' goals prevented per 90); prefix `-` for descending. Default `-rating`. Missing values sort last. |
 | `page`, `pageSize` | 1-based page (default 1) and page size (default 20, at most 100). A page past the end returns an empty list with the real total. |
 
 Example: `GET /players?search=odegaard&pageSize=1`
@@ -102,13 +104,16 @@ Example: `GET /players?search=odegaard&pageSize=1`
     "club": { "id": 57, "name": "Arsenal", "league": "Premier League" },
     "position": "MID", "role": "Advanced playmaker", "age": 25, "minutes": 2325,
     "qualified": true, "rating": 68, "npgaP90": 0.387,
-    "prediction": { "predictedP90": 0.523, "actualP90": 0.387, "gapP90": -0.136 }
+    "prediction": { "predictedP90": 0.523, "actualP90": 0.387, "gapP90": -0.136 },
+    "keeper": null
   }],
   "page": 1, "pageSize": 1, "total": 1, "totalPages": 1, "sort": "-rating"
 }
 ```
 
-**Squad gaps** use the minutes-weighted average of predicted non-penalty G+A per 90 over players with 900+ minutes, compared with the same average for that position across the club's league. A position is `weak` when it is 10% or more below the league average, `below` when under it, `above` otherwise, and `missing` when the squad has no qualified player there.
+**Squad gaps** use the minutes-weighted average of predicted non-penalty G+A per 90 over players with 900+ minutes, compared with the same average for that position across the club's league. A position is `weak` when it is 10% or more below the league average, `below` when under it, `above` otherwise, and `missing` when the squad has no qualified player there. Goalkeepers come back separately as `goalkeeper`: the squad's minutes-weighted goals prevented per 90 against the league's keepers, `weak` at 0.10 or more below (roughly the bottom quarter of clubs in 2024/25).
+
+Goalkeepers with 900+ minutes carry `"keeper": { "concededP90", "expectedConcededP90", "preventedP90" }` in place of a prediction; everyone else has `"keeper": null`.
 
 **Errors** always have the same shape, and unknown parameters are rejected by name, so a typo like `postion=STR` is a 400 rather than a silently ignored filter:
 
@@ -126,8 +131,8 @@ React + Vite + TypeScript, with Recharts for the radar charts and hand-drawn SVG
 | Page | What it shows |
 |---|---|
 | Players (`/`) | Search by name (accents ignored) with league, club, position and sort filters, 20 per page. Filters live in the URL, so a filtered list can be shared. |
-| Player (`/players/:id`) | Role rating, output, a radar of eight playing-style percentiles, all 19 model inputs with percentile bars, a predicted-vs-actual gauge and the position on a mini pitch. |
-| Squad gaps (`/clubs`, `/clubs/:id`) | The squad as a 4-3-3 seen from above. Each node is outlined by how that position's expected output compares with the league: green above, grey below, pulsing magenta when weak or missing. |
+| Player (`/players/:id`) | Role rating, output, a radar of eight playing-style percentiles, all 19 model inputs with percentile bars, a predicted-vs-actual gauge (goals conceded vs expected for goalkeepers) and the position on a mini pitch. |
+| Squad gaps (`/clubs`, `/clubs/:id`) | The squad as a 4-3-3 seen from above, goalkeeper included. Each node is outlined by how that position compares with the league (expected output for outfield players, goals prevented for the keeper): green above, grey below, pulsing magenta when weak or missing. |
 | Compare (`/compare?ids=`) | Up to three players: an overlaid radar and a side-by-side table with the best value in each row marked. |
 | Over / under (`/insights`) | The biggest gaps between actual and predicted output, filterable by position and league, with the model's real metrics. |
 
@@ -151,8 +156,8 @@ Tests:
 | Where | Command | Tests |
 |---|---|---|
 | `pipeline` | `python -m pytest` | 128: data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, the model's held-out performance, the xG benchmark, leakage and penalty bias |
-| `api` | `npm test` | 81: every endpoint, validation, errors, CORS and read-only access, against a seeded test database |
-| `web` | `npm test` | 8: number formatting, the gauge scale and the formation layout |
+| `api` | `npm test` | 84: every endpoint, validation, errors, CORS, read-only access and goalkeepers' goals prevented, against a seeded test database |
+| `web` | `npm test` | 10: number formatting, the gauge scale, the goalkeeper verdict and the formation layout |
 
 ## Load the database (pipeline)
 

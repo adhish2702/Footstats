@@ -1,13 +1,34 @@
 import { Link, useParams } from "react-router-dom";
 import type { ModelInfo, PlayerDetail } from "../api/types";
-import { Avatar, ClubBadge, CountUp, GapVerdict, Panel, PositionChip } from "../components/bits";
+import type { KeeperVsXg } from "../api/types";
+import { Avatar, ClubBadge, CountUp, GapVerdict, Panel, PositionChip, VsExpected } from "../components/bits";
 import { StyleRadar } from "../components/charts";
 import { MiniPitch, PredictionGauge } from "../components/svg";
 import { PlusIcon } from "../components/icons";
 import { ErrorState, LoadingPanel, Skeleton } from "../components/states";
 import { useCompare } from "../hooks/compare";
 import { useApi } from "../hooks/useApi";
-import { fixed, ordinal, thousands } from "../lib/format";
+import { KEEPER_LEVEL, fixed, ordinal, thousands } from "../lib/format";
+
+/** Goals conceded per 90 against what the shots faced were worth. Lower conceded is better. */
+function KeeperBars({ keeper }: { keeper: KeeperVsXg }) {
+  const max = Math.max(keeper.concededP90, keeper.expectedConcededP90, 0.1) * 1.15;
+  const good = keeper.preventedP90 >= 0;
+  const row = (label: string, value: number, cls: string) => (
+    <div className="vs-bar vs-bar--wide">
+      <span>{label}</span>
+      <span className="bar"><span className={cls} style={{ width: `${(value / max) * 100}%` }} /></span>
+      <span className="num">{fixed(value)}</span>
+    </div>
+  );
+  return (
+    <div className="vs-bars" role="img"
+      aria-label={`Conceded ${fixed(keeper.concededP90)} per 90 against ${fixed(keeper.expectedConcededP90)} expected.`}>
+      {row("Conceded", keeper.concededP90, good ? "squad--above" : "squad--weak")}
+      {row("Expected", keeper.expectedConcededP90, "league")}
+    </div>
+  );
+}
 
 export function PlayerPage() {
   const { id } = useParams();
@@ -73,13 +94,21 @@ export function PlayerPage() {
           <div className="kpi__value"><CountUp value={out.npgaP90} /></div>
           <p className="kpi__note"><span className="num">{out.nonPenaltyGoals}</span> non-penalty goals, <span className="num">{out.assists}</span> assists</p>
         </Panel>
-        <Panel index={3} label="Predicted">
-          <p className="label">Predicted per 90</p>
-          <div className="kpi__value" style={{ color: "var(--cyan)" }}>
-            {p.prediction ? <CountUp value={p.prediction.predictedP90} /> : <span className="num">—</span>}
-          </div>
-          <p className="kpi__note">{p.prediction ? "From playing style alone" : "Outfield players with 900+ minutes only"}</p>
-        </Panel>
+        {p.keeper ? (
+          <Panel index={3} label="Goals prevented">
+            <p className="label">Goals prevented per 90</p>
+            <div className="kpi__value" style={{ color: "var(--cyan)" }}><CountUp value={p.keeper.preventedP90} signedValue /></div>
+            <p className="kpi__note">Post-shot xG faced minus goals conceded</p>
+          </Panel>
+        ) : (
+          <Panel index={3} label="Predicted">
+            <p className="label">Predicted per 90</p>
+            <div className="kpi__value" style={{ color: "var(--cyan)" }}>
+              {p.prediction ? <CountUp value={p.prediction.predictedP90} /> : <span className="num">—</span>}
+            </div>
+            <p className="kpi__note">{p.prediction ? "From playing style alone" : "Outfield players with 900+ minutes only"}</p>
+          </Panel>
+        )}
         <Panel index={4} label="Minutes">
           <p className="label">Minutes</p>
           <div className="kpi__value"><span className="num">{thousands(p.minutes)}</span></div>
@@ -111,6 +140,21 @@ export function PlayerPage() {
         </Panel>
 
         <div className="stack">
+          {p.keeper ? (
+            <Panel index={6} label="Goals conceded vs expected">
+              <div className="panel__title">
+                <h2>Conceded vs expected</h2>
+                <VsExpected player={p} />
+              </div>
+              <KeeperBars keeper={p.keeper} />
+              <p className="note">
+                Per 90. Expected is the post-shot xG of the shots on target faced (FBref/Opta): how many goals an average
+                keeper would concede from them. Goals prevented is expected minus conceded; within{" "}
+                <span className="num">{fixed(KEEPER_LEVEL, 2)}</span> either way is called level. This is not the
+                goals + assists model, which covers outfield players only.
+              </p>
+            </Panel>
+          ) : (
           <Panel index={6} label="Predicted vs actual">
             <div className="panel__title">
               <h2>Predicted vs actual</h2>
@@ -128,11 +172,12 @@ export function PlayerPage() {
             ) : (
               <p className="muted">
                 {p.position === "GKP"
-                  ? "Goalkeepers aren't modelled: the model predicts outfield output."
+                  ? `Goals prevented is shown for goalkeepers with 900+ minutes; ${p.name} played ${thousands(p.minutes)}.`
                   : `The model covers players with 900+ minutes; ${p.name} played ${thousands(p.minutes)}.`}
               </p>
             )}
           </Panel>
+          )}
 
           <Panel index={7} label="Position">
             <div className="panel__title"><h2>Position</h2></div>

@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import type { ClubGaps, PositionGap } from "../api/types";
+import type { ClubGaps, KeeperGap, PositionGap } from "../api/types";
 import { Panel, StatusTag } from "../components/bits";
 import { FormationPitch } from "../components/FormationPitch";
 import { ErrorState, LoadingPanel } from "../components/states";
@@ -25,6 +25,50 @@ function VsLeague({ gap, max }: { gap: PositionGap; max: number }) {
   );
 }
 
+/** The goalkeeper row: goals prevented per 90, squad against league (either can be negative). */
+function KeeperRow({ gap }: { gap: KeeperGap }) {
+  const values = [gap.squadPreventedP90 ?? 0, gap.leaguePreventedP90 ?? 0];
+  const span = Math.max(0.15, ...values.map(Math.abs));
+  // A centred bar: left of the middle is negative, right is positive.
+  const bar = (v: number | null, cls: string) => {
+    const x = ((v ?? 0) / span) * 50;
+    return <span className={cls} style={{ left: `${50 + Math.min(0, x)}%`, width: `${Math.abs(x)}%` }} />;
+  };
+  const tone = gap.status === "missing" ? "weak" : gap.status;
+  return (
+    <div className="gap-row">
+      <span className="pos-chip">GKP</span>
+      <div style={{ display: "grid", gap: 6 }}>
+        <StatusTag status={gap.status} />
+        <div className="vs-bars" aria-hidden="true">
+          <div className="vs-bar">
+            <span>Squad</span>
+            <span className="bar bar--centred">{bar(gap.squadPreventedP90, `squad--${tone}`)}</span>
+            <span className="num">{signed(gap.squadPreventedP90)}</span>
+          </div>
+          <div className="vs-bar">
+            <span>League</span>
+            <span className="bar bar--centred">{bar(gap.leaguePreventedP90, "league")}</span>
+            <span className="num">{signed(gap.leaguePreventedP90)}</span>
+          </div>
+        </div>
+      </div>
+      <span className="big-num" style={{ textAlign: "right" }} title="Goals prevented per 90, squad minus league">
+        {gap.differenceP90 === null ? "—" : signed(gap.differenceP90)}
+        <span className="sr-only"> goals prevented per 90 against the league average</span>
+      </span>
+      <div className="gap-row__players">
+        <span className="muted">Goals prevented per 90 vs post-shot xG, not the model · </span>
+        {gap.players.length
+          ? gap.players.map((pl, i) => (
+            <span key={pl.id}>{i > 0 && ", "}<Link to={`/players/${pl.id}`}>{pl.name}</Link></span>
+          ))
+          : "No goalkeeper with 900+ minutes"}
+      </div>
+    </div>
+  );
+}
+
 export function ClubGapsPage() {
   const { id } = useParams();
   const gaps = useApi<ClubGaps>(`/clubs/${id}/gaps`);
@@ -34,7 +78,7 @@ export function ClubGapsPage() {
   }
   if (gaps.status === "error") return <Panel><ErrorState error={gaps.error} onRetry={gaps.retry} /></Panel>;
 
-  const { club, positions, weakest } = gaps.data;
+  const { club, positions, weakest, goalkeeper } = gaps.data;
   const max = Math.max(0.1, ...positions.flatMap((p) => [p.squadPredictedP90 ?? 0, p.leaguePredictedP90]));
   const weak = positions.find((p) => p.position === weakest);
 
@@ -62,7 +106,7 @@ export function ClubGapsPage() {
             <h2>4-3-3</h2>
             <p>Regulars by minutes</p>
           </div>
-          <FormationPitch positions={positions} club={club.name} />
+          <FormationPitch positions={positions} goalkeeper={gaps.data.goalkeeper} club={club.name} />
           <div className="legend" aria-label="Legend">
             <StatusTag status="above" />
             <StatusTag status="below" />
@@ -74,8 +118,9 @@ export function ClubGapsPage() {
         <Panel index={1} label="Positions">
           <div className="panel__title">
             <h2>By position</h2>
-            <p>Expected npG+A per 90</p>
+            <p>Outfield: expected npG+A per 90 · GK: goals prevented per 90</p>
           </div>
+          <KeeperRow gap={goalkeeper} />
           {positions.map((g) => (
             <div key={g.position} className="gap-row">
               <span className="pos-chip">{g.position}</span>

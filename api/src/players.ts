@@ -31,7 +31,17 @@ export const CURRENT_MODEL = `(SELECT version FROM model_versions ORDER BY train
 export const SUMMARY_SELECT = `
   p.id, p.name, p.position, p.role, p.age, p.minutes, p.qualified, p.rating,
   c.id AS club_id, c.name AS club_name, c.league,
-  s.npga_p90, pr.predicted_p90, pr.actual_p90, pr.gap_p90`;
+  s.npga_p90, pr.predicted_p90, pr.actual_p90, pr.gap_p90,
+  s.goals_conceded AS keeper_conceded, s.goals_prevented AS keeper_prevented`;
+
+/**
+ * Goalkeepers aren't covered by the goals + assists model. Their actual-vs-expected
+ * number is goals prevented: post-shot xG faced (FBref/Opta) minus goals conceded,
+ * per 90. Positive means fewer goals conceded than the shots faced would suggest.
+ * Like the model, it is only given for players with 900+ minutes.
+ */
+export const KEEPER_PREVENTED_P90 = `CASE WHEN p.position = 'GKP' AND p.qualified
+  THEN s.goals_prevented / p.minutes * 90 END`;
 
 export const SUMMARY_FROM = `
   players p
@@ -60,6 +70,26 @@ export interface PlayerSummary {
   npgaP90: number;
   /** Null for goalkeepers and players under 900 minutes: the model doesn't cover them. */
   prediction: Prediction | null;
+  /** Goalkeepers with 900+ minutes only: goals conceded against post-shot xG, per 90. */
+  keeper: KeeperVsXg | null;
+}
+
+export interface KeeperVsXg {
+  concededP90: number;
+  expectedConcededP90: number;
+  preventedP90: number;
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+function keeperVsXg(r: Row): KeeperVsXg | null {
+  if (r.position !== "GKP" || !r.qualified || r.keeper_prevented === null || r.keeper_prevented === undefined) return null;
+  const per90 = (n: number) => round3((n / r.minutes) * 90);
+  return {
+    concededP90: per90(r.keeper_conceded),
+    expectedConcededP90: per90(r.keeper_conceded + r.keeper_prevented),
+    preventedP90: per90(r.keeper_prevented),
+  };
 }
 
 export function toSummary(r: Row): PlayerSummary {
@@ -78,6 +108,7 @@ export function toSummary(r: Row): PlayerSummary {
       r.predicted_p90 === null || r.predicted_p90 === undefined
         ? null
         : { predictedP90: r.predicted_p90, actualP90: r.actual_p90, gapP90: r.gap_p90 },
+    keeper: keeperVsXg(r),
   };
 }
 

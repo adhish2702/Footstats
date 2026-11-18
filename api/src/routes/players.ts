@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Db } from "../db";
 import { HttpError } from "../errors";
-import { SUMMARY_FROM, SUMMARY_SELECT, playerDetail, toSummary } from "../players";
+import { KEEPER_PREVENTED_P90, SUMMARY_FROM, SUMMARY_SELECT, playerDetail, toSummary } from "../players";
 import { escapeLike, foldName } from "../text";
 import { emptyQuery, id, parse, playersQuery } from "../validation";
 
@@ -14,6 +14,8 @@ const SORT_COLUMNS: Record<string, string> = {
   predicted: "pr.predicted_p90",
   actual: "pr.actual_p90",
   gap: "pr.gap_p90",
+  // goalkeepers only: goals prevented per 90 (everyone else sorts last)
+  prevented: KEEPER_PREVENTED_P90,
 };
 
 export function playersRouter(db: Db): Router {

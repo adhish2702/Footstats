@@ -6,8 +6,8 @@ const ids = (body: { data: { id: number }[] }) => body.data.map((p) => p.id);
 describe("GET /players", () => {
   it("lists players by rating, best first, 20 a page", async () => {
     const res = await api().get("/players").expect(200);
-    expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 15, totalPages: 1, sort: "-rating" });
-    expect(ids(res.body)).toEqual([1, 11, 12, 2, 14, 5, 3, 13, 4, 10, 8, 9, 7, 6, 15]);
+    expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 16, totalPages: 1, sort: "-rating" });
+    expect(ids(res.body)).toEqual([1, 11, 12, 2, 14, 5, 3, 13, 4, 10, 8, 9, 7, 6, 15, 16]);
   });
 
   it("returns a summary with club and prediction", async () => {
@@ -15,24 +15,24 @@ describe("GET /players", () => {
     expect(res.body.data).toEqual([{
       id: 11, name: "Karim López", club: { id: 3, name: "Ciudad Azul", league: "La Liga" },
       position: "STR", role: "False nine", age: 23, minutes: 2300, qualified: true, rating: 70,
-      npgaP90: 0.9, prediction: { predictedP90: 0.55, actualP90: 0.9, gapP90: 0.35 },
+      npgaP90: 0.9, prediction: { predictedP90: 0.55, actualP90: 0.9, gapP90: 0.35 }, keeper: null,
     }]);
   });
 
   it("has no prediction for goalkeepers or players under 900 minutes", async () => {
     const res = await api().get("/players?sort=name").expect(200);
     const without = res.body.data.filter((p: any) => p.prediction === null).map((p: any) => p.id);
-    expect(without.sort((a: number, b: number) => a - b)).toEqual([5, 6, 15]);
+    expect(without.sort((a: number, b: number) => a - b)).toEqual([5, 6, 15, 16]);
   });
 
   it("paginates", async () => {
     const page2 = await api().get("/players?pageSize=4&page=2&sort=name").expect(200);
-    expect(page2.body).toMatchObject({ page: 2, pageSize: 4, total: 15, totalPages: 4 });
+    expect(page2.body).toMatchObject({ page: 2, pageSize: 4, total: 16, totalPages: 4 });
     expect(page2.body.data.map((p: any) => p.name)).toEqual(["Eli Ford", "Finn Grant", "Gary Hill", "Hugo Ince"]);
     const last = await api().get("/players?pageSize=4&page=4").expect(200);
-    expect(last.body.data).toHaveLength(3);
+    expect(last.body.data).toHaveLength(4);
     const beyond = await api().get("/players?pageSize=4&page=9").expect(200);
-    expect(beyond.body).toMatchObject({ data: [], total: 15, totalPages: 4 });
+    expect(beyond.body).toMatchObject({ data: [], total: 16, totalPages: 4 });
   });
 
   it("searches names ignoring accents and case", async () => {
@@ -52,7 +52,7 @@ describe("GET /players", () => {
   });
 
   it("filters by club, league and position, together", async () => {
-    expect(ids((await api().get("/players?club=2").expect(200)).body).sort()).toEqual([10, 7, 8, 9]);
+    expect(ids((await api().get("/players?club=2").expect(200)).body).sort((a, b) => a - b)).toEqual([7, 8, 9, 10, 16]);
     const laLiga = (await api().get("/players").query({ league: "La Liga" }).expect(200)).body;
     expect(laLiga.total).toBe(5);
     const strikers = (await api().get("/players?position=STR&sort=name").expect(200)).body;
@@ -65,15 +65,28 @@ describe("GET /players", () => {
   it("sorts by any field either way, with missing values last", async () => {
     const gapDesc = (await api().get("/players?sort=-gap").expect(200)).body;
     expect(ids(gapDesc).slice(0, 3)).toEqual([11, 1, 3]);
-    expect(ids(gapDesc).slice(-3)).toEqual([5, 6, 15]);
+    expect(ids(gapDesc).slice(-4)).toEqual([5, 6, 15, 16]);
     const gapAsc = (await api().get("/players?sort=gap").expect(200)).body;
     expect(ids(gapAsc).slice(0, 2)).toEqual([7, 2]);
-    expect(ids(gapAsc).slice(-3)).toEqual([5, 6, 15]);
+    expect(ids(gapAsc).slice(-4)).toEqual([5, 6, 15, 16]);
     const age = (await api().get("/players?sort=age").expect(200)).body;
     expect(ids(age)[0]).toBe(6);
     expect(ids(age).at(-1)).toBe(15); // age unknown
     const minutes = (await api().get("/players?sort=-minutes&pageSize=1").expect(200)).body;
     expect(ids(minutes)).toEqual([5]);
+  });
+
+  it("gives goalkeepers goals prevented against post-shot xG instead of a prediction", async () => {
+    const keepers = (await api().get("/players?position=GKP&sort=-prevented").expect(200)).body;
+    expect(ids(keepers)).toEqual([5, 16]);
+    // Eli Ford: 30 conceded, 3.2 prevented in 3,000 minutes; Pavel Quinn: 40 and -4 in 2,700.
+    expect(keepers.data[0]).toMatchObject({
+      prediction: null, keeper: { concededP90: 0.9, expectedConcededP90: 0.996, preventedP90: 0.096 },
+    });
+    expect(keepers.data[1].keeper).toEqual({ concededP90: 1.333, expectedConcededP90: 1.2, preventedP90: -0.133 });
+    const all = (await api().get("/players?sort=-prevented").expect(200)).body;
+    expect(ids(all).slice(0, 2)).toEqual([5, 16]);
+    expect(all.data.slice(2).every((p: any) => p.keeper === null)).toBe(true);
   });
 
   it.each([
@@ -131,9 +144,10 @@ describe("GET /players/:id", () => {
     expect(misc.lowerIsBetter).toBe(true);
   });
 
-  it("shows goalkeeping stats and no prediction for a goalkeeper", async () => {
+  it("shows goalkeeping stats and goals prevented, but no prediction, for a goalkeeper", async () => {
     const res = await api().get("/players/5").expect(200);
     expect(res.body.prediction).toBeNull();
+    expect(res.body.keeper).toEqual({ concededP90: 0.9, expectedConcededP90: 0.996, preventedP90: 0.096 });
     expect(res.body.stats.goalkeeping).toEqual({ savesPct: 71.5, cleanSheets: 12, goalsConceded: 30, goalsPrevented: 3.2 });
   });
 

@@ -26,7 +26,7 @@ function wholeNumber(min: number, max: number, fallback: number) {
     .transform((n) => n ?? fallback);
 }
 
-export const SORT_FIELDS = ["name", "age", "minutes", "rating", "npga", "predicted", "actual", "gap"] as const;
+export const SORT_FIELDS = ["name", "age", "minutes", "rating", "npga", "predicted", "actual", "gap", "prevented"] as const;
 
 export const playersQuery = z
   .object({

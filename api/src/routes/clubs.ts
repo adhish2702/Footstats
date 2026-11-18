@@ -6,6 +6,12 @@ import { OUTFIELD, clubsQuery, emptyQuery, id, parse } from "../validation";
 
 /** A position is "weak" when the squad's expected output is this far below the league's. */
 export const WEAK_BELOW = 0.1;
+/**
+ * Goalkeepers are judged on goals prevented per 90 (post-shot xG minus goals
+ * conceded), not the model. A club's keepers are "weak" this far below the
+ * league average: roughly the bottom quarter of clubs in 2024/25.
+ */
+export const KEEPER_WEAK_BELOW = 0.1;
 
 export function clubsRouter(db: Db): Router {
   const router = Router();
@@ -104,14 +110,51 @@ export function clubsRouter(db: Db): Router {
     // Missing positions first, then the furthest below the league average.
     positions.sort((a, b) => (a.vsLeaguePct ?? -Infinity) - (b.vsLeaguePct ?? -Infinity));
 
+    // Goalkeepers: goals prevented per 90, minutes-weighted, against the league's keepers.
+    const keepers = await db.query(
+      `SELECT p.id, p.name, p.club_id, p.minutes, s.goals_conceded, s.goals_prevented
+         FROM players p
+         JOIN player_stats s ON s.player_id = p.id
+         JOIN clubs c ON c.id = p.club_id
+        WHERE p.position = 'GKP' AND p.qualified AND s.goals_prevented IS NOT NULL AND c.league = $1
+        ORDER BY p.minutes DESC, p.id`,
+      [club.league],
+    );
+    const per90 = (total: number, minutes: number) => (minutes > 0 ? (total / minutes) * 90 : null);
+    const sum = (xs: any[], f: (x: any) => number) => xs.reduce((a, x) => a + f(x), 0);
+    const squadKeepers = keepers.rows.filter((k) => k.club_id === clubId);
+    const leaguePrevented = per90(sum(keepers.rows, (k) => k.goals_prevented), sum(keepers.rows, (k) => k.minutes));
+    const squadMinutes = sum(squadKeepers, (k) => k.minutes);
+    const squadPrevented = squadKeepers.length ? per90(sum(squadKeepers, (k) => k.goals_prevented), squadMinutes) : null;
+    const keeperDiff = squadPrevented === null || leaguePrevented === null ? null : squadPrevented - leaguePrevented;
+    const goalkeeper = {
+      position: "GKP" as const,
+      measure: "Goals prevented per 90: post-shot xG faced minus goals conceded (FBref/Opta), not the model",
+      status: keeperDiff === null ? "missing" : keeperDiff <= -KEEPER_WEAK_BELOW ? "weak" : keeperDiff < 0 ? "below" : "above",
+      squadPlayers: squadKeepers.length,
+      squadMinutes,
+      squadPreventedP90: round(squadPrevented),
+      leaguePreventedP90: round(leaguePrevented),
+      differenceP90: round(keeperDiff),
+      players: squadKeepers.map((k) => ({
+        id: k.id, name: k.name, minutes: k.minutes,
+        preventedP90: round(per90(k.goals_prevented, k.minutes)),
+        concededP90: round(per90(k.goals_conceded, k.minutes)),
+        expectedConcededP90: round(per90(k.goals_conceded + k.goals_prevented, k.minutes)),
+      })),
+    };
+
     res.json({
       club: { id: club.id, name: club.name, league: club.league },
       method:
         "Minutes-weighted average of predicted non-penalty goals + assists per 90, over players with 900+ minutes. " +
         `A position is weak when the squad is ${WEAK_BELOW * 100}% or more below the league average, ` +
-        "and missing when the squad has no qualified player there. Goalkeepers are not modelled.",
+        "and missing when the squad has no qualified player there. " +
+        "Goalkeepers aren't covered by the model: they are compared on goals prevented per 90 " +
+        `(post-shot xG faced minus goals conceded), and are weak ${KEEPER_WEAK_BELOW} or more below the league average.`,
       weakest: positions[0]?.position ?? null,
       positions,
+      goalkeeper,
     });
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PositionGap } from "../api/types";
 import { path } from "../api/client";
-import { fixed, gapVerdict, gaugeAngle, gaugeMax, initials, ordinal, signed } from "./format";
+import { fixed, gapVerdict, gaugeAngle, gaugeMax, initials, keeperVerdict, ordinal, signed } from "./format";
 import { FORMATION, formationSlots } from "./formation";
 
 describe("format", () => {
@@ -72,5 +72,24 @@ describe("formation", () => {
     expect(slots.find((s) => s.position === "STR")).toMatchObject({ status: "missing", player: null });
     expect(slots.find((s) => s.position === "WNG")?.status).toBe("missing");
     expect(slots.find((s) => s.position === "GKP")?.status).toBe("unmodelled");
+  });
+
+  it("puts the club's main goalkeeper in goal, coloured by goals prevented", () => {
+    const keeperGap = {
+      position: "GKP" as const, measure: "", status: "weak" as const, squadPlayers: 2, squadMinutes: 3000,
+      squadPreventedP90: -0.2, leaguePreventedP90: 0, differenceP90: -0.2,
+      players: [
+        { id: 7, name: "Main Keeper", minutes: 2500, preventedP90: -0.2, concededP90: 1.5, expectedConcededP90: 1.3 },
+        { id: 8, name: "Back Up", minutes: 500, preventedP90: 0, concededP90: 1, expectedConcededP90: 1 },
+      ],
+    };
+    const gk = formationSlots([], keeperGap).find((s) => s.position === "GKP");
+    expect(gk).toMatchObject({ status: "weak", player: { id: 7, name: "Main Keeper" } });
+  });
+
+  it("judges goalkeepers within 0.05 per 90 as level", () => {
+    expect(keeperVerdict(0.096)).toBe("over");
+    expect(keeperVerdict(-0.133)).toBe("under");
+    expect(keeperVerdict(0.03)).toBe("level");
   });
 });

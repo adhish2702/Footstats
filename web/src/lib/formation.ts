@@ -1,4 +1,4 @@
-import type { GapStatus, Position, PositionGap } from "../api/types";
+import type { GapStatus, KeeperGap, Position, PositionGap } from "../api/types";
 
 /** A 4-3-3 on a vertical pitch, 0-100 in both directions, attacking upwards. */
 export const FORMATION: { position: Position; x: number; y: number }[] = [
@@ -24,11 +24,18 @@ export interface FormationSlot {
   player: { id: number; name: string } | null;
 }
 
-/** Place a club's qualified players into the 4-3-3 slots and colour them by their position's status. */
-export function formationSlots(positions: PositionGap[]): FormationSlot[] {
+/**
+ * Place a club's qualified players into the 4-3-3 slots and colour them by their
+ * position's status. The goalkeeper slot uses goals prevented when it's given.
+ */
+export function formationSlots(positions: PositionGap[], goalkeeper?: KeeperGap): FormationSlot[] {
   const used = new Map<Position, number>();
   return FORMATION.map((slot) => {
-    if (slot.position === "GKP") return { ...slot, status: "unmodelled", player: null };
+    if (slot.position === "GKP") {
+      if (!goalkeeper) return { ...slot, status: "unmodelled", player: null };
+      const keeper = goalkeeper.players[0];
+      return { ...slot, status: goalkeeper.status, player: keeper ? { id: keeper.id, name: keeper.name } : null };
+    }
     const gap = positions.find((p) => p.position === slot.position);
     const index = used.get(slot.position) ?? 0;
     used.set(slot.position, index + 1);

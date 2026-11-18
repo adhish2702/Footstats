@@ -15,6 +15,13 @@ export interface Prediction {
   gapP90: number;
 }
 
+/** Goalkeepers with 900+ minutes: goals conceded against post-shot xG faced, per 90. */
+export interface KeeperVsXg {
+  concededP90: number;
+  expectedConcededP90: number;
+  preventedP90: number;
+}
+
 export interface PlayerSummary {
   id: number;
   name: string;
@@ -27,6 +34,7 @@ export interface PlayerSummary {
   rating: number;
   npgaP90: number;
   prediction: Prediction | null;
+  keeper: KeeperVsXg | null;
 }
 
 export interface PlayerPage {
@@ -84,11 +92,24 @@ export interface PositionGap {
   players: { id: number; name: string; minutes: number; predictedP90: number; actualP90: number }[];
 }
 
+export interface KeeperGap {
+  position: "GKP";
+  measure: string;
+  status: GapStatus;
+  squadPlayers: number;
+  squadMinutes: number;
+  squadPreventedP90: number | null;
+  leaguePreventedP90: number | null;
+  differenceP90: number | null;
+  players: { id: number; name: string; minutes: number; preventedP90: number; concededP90: number; expectedConcededP90: number }[];
+}
+
 export interface ClubGaps {
   club: ClubRef;
   method: string;
   weakest: Position | null;
   positions: PositionGap[];
+  goalkeeper: KeeperGap;
 }
 
 export interface OverUnder {

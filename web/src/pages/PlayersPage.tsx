@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { path } from "../api/client";
 import type { Club, PlayerPage } from "../api/types";
-import { Avatar, ClubBadge, GapVerdict, Panel, PositionChip } from "../components/bits";
+import { Avatar, ClubBadge, Panel, PositionChip, VsExpected } from "../components/bits";
 import { PlusIcon, SearchIcon } from "../components/icons";
 import { EmptyState, ErrorState, LoadingRows } from "../components/states";
 import { useCompare } from "../hooks/compare";
@@ -16,6 +16,7 @@ const SORTS = [
   { value: "-predicted", label: "Predicted, high to low" },
   { value: "-gap", label: "Over-performing most" },
   { value: "gap", label: "Under-performing most" },
+  { value: "-prevented", label: "Goals prevented (keepers)" },
   { value: "-minutes", label: "Minutes, most first" },
   { value: "age", label: "Age, youngest first" },
   { value: "name", label: "Name, A to Z" },
@@ -138,7 +139,7 @@ export function PlayersPage() {
                 <th scope="col" className="r">Rating</th>
                 <th scope="col" className="r" title="Non-penalty goals + assists per 90">G+A/90</th>
                 <th scope="col" className="r" title="Predicted non-penalty goals + assists per 90">Pred.</th>
-                <th scope="col">Vs model</th>
+                <th scope="col" title="Outfield: actual minus predicted G+A per 90. Goalkeepers: goals prevented per 90 against post-shot xG.">Vs expected</th>
                 <th scope="col"><span className="sr-only">Compare</span></th>
               </tr>
             </thead>
@@ -161,7 +162,7 @@ export function PlayersPage() {
                   <td data-label="Rating" className="r"><span className="big-num">{p.rating.toFixed(0)}</span></td>
                   <td data-label="G+A/90" className="r num">{fixed(p.npgaP90)}</td>
                   <td data-label="Pred." className="r num">{fixed(p.prediction?.predictedP90)}</td>
-                  <td data-label="Vs model"><GapVerdict prediction={p.prediction} compact /></td>
+                  <td data-label="Vs expected"><VsExpected player={p} compact /></td>
                   <td className="cell-hide-sm">
                     <button type="button" className="icon-button" onClick={() => compare.add(p.id)}
                       disabled={compare.has(p.id) || compare.full}

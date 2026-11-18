@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { path } from "../api/client";
 import type { PlayerDetail, PlayerPage } from "../api/types";
-import { Avatar, ClubBadge, GapVerdict, Panel, PositionChip } from "../components/bits";
+import { Avatar, ClubBadge, Panel, PositionChip, VsExpected } from "../components/bits";
 import { SERIES, SeriesLegend, StyleRadar } from "../components/charts";
 import { CloseIcon, SearchIcon, UpIcon } from "../components/icons";
 import { EmptyState, ErrorState, LoadingPanel } from "../components/states";
@@ -78,6 +78,7 @@ function CompareTable({ players }: { players: PlayerDetail[] }) {
         { label: "npG+A per 90", values: players.map((p) => p.npgaP90), format: (v) => fixed(v), better: "high" },
         { label: "Predicted per 90", values: players.map((p) => p.prediction?.predictedP90 ?? null), format: (v) => fixed(v), better: "high" },
         { label: "Actual − predicted", values: players.map((p) => p.prediction?.gapP90 ?? null), format: (v) => signed(v), better: "high" },
+        { label: "Goals prevented per 90 (keepers)", values: players.map((p) => p.keeper?.preventedP90 ?? null), format: (v) => signed(v), better: "high" },
         { label: "Minutes", values: players.map((p) => p.minutes), format: (v) => (v === null ? "—" : thousands(v)), better: null },
       ],
     },
@@ -182,7 +183,7 @@ export function ComparePage() {
                   <>
                     <Link to={`/players/${p.id}`}>{p.name}</Link>
                     <small><ClubBadge club={p.club} link={false} /> <PositionChip position={p.position} /></small>
-                    <small style={{ marginTop: 4 }}><GapVerdict prediction={p.prediction} compact /></small>
+                    <small style={{ marginTop: 4 }}><VsExpected player={p} compact /></small>
                   </>
                 ) : <span className="muted">Loading…</span>}
               </div>
