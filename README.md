@@ -1,10 +1,10 @@
 # FootStats
 
-Player analytics for Europe's top five leagues in 2024/25 (Premier League, La Liga, Serie A, Bundesliga, Ligue 1): 18 tactical roles worked out from how each player plays, role-specific ratings, cross-league similar-player search, scouting filters by league and age, and a model that predicts goal contributions from how a player plays. The model is benchmarked against professional xG.
+Player analytics for Europe's top five leagues in 2024/25 (Premier League, La Liga, Serie A, Bundesliga, Ligue 1): 18 tactical roles worked out from how each player plays, role-specific ratings, and a model that predicts each outfield player's non-penalty goals + assists per 90 from how they play, benchmarked against professional xG.
 
-**Stack:** Python, FastAPI, pandas, scikit-learn, React (Vite), pytest
+A Python pipeline runs the model and writes players, clubs, stats and predictions to PostgreSQL. A read-only Express API serves them, and a React app lets you search players, open a profile, see where a club's squad is weakest, compare up to three players and list the biggest over- and under-performers. Similar-player search and a market-value model are offline analyses in the pipeline.
 
-![Players view](docs/players.png)
+**Stack:** Python (pandas, scikit-learn), PostgreSQL, Node.js + Express + TypeScript, React + Vite + TypeScript, Recharts, pytest, Jest + Supertest, Vitest
 
 ## What it does
 
@@ -14,9 +14,9 @@ Player analytics for Europe's top five leagues in 2024/25 (Premier League, La Li
 | **Player ratings** (0–99, 50 = average) | Each role has its own weights. Weighted per-90 z-scores against players in the same role with 900+ minutes across all five leagues. Goals are non-penalty, so being the designated taker doesn't lift a rating. Low-minute players are shrunk toward average so a cameo can't top the table. |
 | **Strikers vs wingers, full-backs vs centre-backs** | FBref lists forwards as "FW" and defenders as "DF", so each pair is separated by how they play before roles are assigned: box touches, shots per touch and aerial duels against crosses, take-ons and carries for forwards; throw-ins, crosses and final-third touches against clearances, aerial duels and own-box touches for defenders. |
 | **Checking the roles** | K-Means groups each position on the same signals without being told the roles. How often its groups match the assigned roles is reported next to what chance would give. |
-| **Similar players** | Cosine similarity of standardised per-90 profiles within the same position, across roles and all five leagues. |
-| **Expected goal contributions** | Ridge regression predicting non-penalty goals + assists per 90 from process stats only (shots, touches in the box, key passes, carries, take-ons). It never sees goals, assists or xG. |
-| **Scouting** | Top-rated players outside Europe's 17 biggest buying clubs, filterable by position, league and age, plus the biggest gaps between actual and expected output. |
+| **Expected goal contributions** | Ridge regression predicting non-penalty goals + assists per 90 from process stats only (shots, touches in the box, key passes, carries, take-ons). It never sees goals, assists or xG. Predictions are computed once by the pipeline and stored in the database. |
+| **Web app** | Player search with filters, player profiles (style radar, predicted-vs-actual gauge, position on a pitch), squad gaps by position on a 4-3-3, a three-player compare and the over/under-performer lists. |
+| **Offline analyses** | Data-driven archetypes (K-Means vs PCA + Gaussian mixture), similar-player search and a market-value model with SHAP, run from the pipeline (sections below). |
 
 ## Roles
 
@@ -63,38 +63,21 @@ Sanity checks on the ratings, each within the player's role: Lewandowski ranks 1
 
 The striker/winger split agrees with a 2-cluster K-Means on its signals for 345 of 346 qualified forwards. Hybrid forwards sit near the line: Mbappé is classed as a winger because he dribbles and carries like one.
 
-![Model view](docs/model.png)
-![Scouting view](docs/scouting.png)
-
 ## Run it locally (Windows / PowerShell)
 
-Backend, from the `pipeline` folder:
+Three parts, each in its own terminal: load the database once, then start the API and the web app.
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app:app --reload --port 8000
-```
+1. **Database and pipeline:** install PostgreSQL, create the databases and load them (steps in the next section).
+2. **API**, from `api`: `npm install`, then `npm run dev` (http://localhost:4000).
+3. **Web app**, from `web`: `npm install`, then `npm run dev`, and open http://localhost:5173. In development the app calls `/api/...`, which Vite forwards to the API on port 4000.
 
-The API takes about 10–20 seconds to start because it trains the model. Interactive API docs are at http://localhost:8000/docs.
+Tests:
 
-Frontend, in a second terminal from the `frontend` folder:
-
-```powershell
-npm install
-npm run dev
-```
-
-Open http://localhost:5173.
-
-Tests, from `pipeline`:
-
-```powershell
-python -m pytest
-```
-
-There are 138 Python tests (in `pipeline`) covering data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment for well-known players, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, similarity, the model's held-out performance, the xG benchmark, leakage, penalty bias, scouting filters and every API endpoint.
+| Where | Command | Tests |
+|---|---|---|
+| `pipeline` | `python -m pytest` | 126: data loading and transfer merging, the database load, the striker/winger and full-back/centre-back splits, role assignment, the K-Means check, the clustering engine, market-value matching, the scouting models, rating sanity, the model's held-out performance, the xG benchmark, leakage and penalty bias |
+| `api` | `npm test` | 81: every endpoint, validation, errors, CORS and read-only access, against a seeded test database |
+| `web` | `npm test` | 8: number formatting, the gauge scale and the formation layout |
 
 ## Load the database (pipeline)
 
@@ -172,6 +155,25 @@ npm run build; npm start
 
 The 81 API tests run against a small made-up dataset (four clubs, 15 players) loaded into `TEST_DATABASE_URL` before each run, so every expected value can be checked by hand. The setup refuses to reset a database whose name doesn't contain "test".
 
+## Web app (`/web`)
+
+React + Vite + TypeScript, with Recharts for the radar charts and hand-drawn SVG for the gauge and pitches.
+
+| Page | What it shows |
+|---|---|
+| Players (`/`) | Search by name (accents ignored) with league, club, position and sort filters, 20 per page. Filters live in the URL, so a filtered list can be shared. |
+| Player (`/players/:id`) | Role rating, output, a radar of eight playing-style percentiles, all 19 model inputs with percentile bars, a predicted-vs-actual gauge and the position on a mini pitch. |
+| Squad gaps (`/clubs`, `/clubs/:id`) | The squad as a 4-3-3 seen from above. Each node is outlined by how that position's expected output compares with the league: green above, grey below, pulsing magenta when weak or missing. |
+| Compare (`/compare?ids=`) | Up to three players: an overlaid radar and a side-by-side table with the best value in each row marked. |
+| Over / under (`/insights`) | The biggest gaps between actual and predicted output, filterable by position and league, with the model's real metrics. |
+
+- **Design:** dark by default (a light theme is in the header), a faint tactical-board grid drawn in SVG behind everything, glass panels with cut corners and a glowing border on hover, Barlow Condensed for headings and numbers and Inter for text. Green is for primary actions and good numbers, cyan for data highlights, magenta only for warnings and under-performance.
+- **Accessibility:** all text is at least 4.5:1 against its background in both themes (checked, lowest 4.81:1). Good and bad are never shown by colour alone: every verdict has an icon and a word, and the compare radar gives each player a different line style and marker as well as a colour. Charts have text equivalents (the feature list, the compare table). Motion is 150–250 ms and switches off with the system's reduce-motion setting.
+- **No trademarks:** no league or club logos, crests, kits or player photos. Clubs appear as neutral text badges and players as initials.
+- **Loading:** pages show skeletons with a scan-line shimmer while data loads, and clear empty and error states. The profile and compare pages load the chart library on demand, so the first page is about 94 kB gzipped.
+
+For a deployed build, set `VITE_API_URL` to the API's address (see `web/.env.example`).
+
 ## Clustering engine (data-driven archetypes)
 
 The roles above are rule-based. `clustering_engine.py` asks the opposite question: with no football knowledge written in, what groups does the data form? It is an offline analysis and does not change the app's roles or ratings. From `pipeline`:
@@ -225,20 +227,6 @@ Outputs go to `pipeline/outputs/scouting/`: model comparison, value gap per play
 ![SHAP importance](pipeline/outputs/scouting/shap_importance.png)
 ![SHAP effects](pipeline/outputs/scouting/shap_effects.png)
 
-## API
-
-| Endpoint | Returns |
-|---|---|
-| `GET /api/players?position=&role=&league=&club=&max_age=&qualified_only=&sort=` | Player list with roles and ratings |
-| `GET /api/players/{id}` | Role, rating breakdown, rank within the role, expected vs actual output, similar players |
-| `GET /api/scouting/targets?position=&role=&league=&max_age=` | Top-rated players outside the elite clubs |
-| `GET /api/scouting/performance?league=` | Biggest under- and over-performers vs the model |
-| `GET /api/model` | Evaluation metrics, xG benchmark, held-out predictions, feature importance |
-| `GET /api/roles` | Roles per position: size, signals, weights, top players and the K-Means check |
-| `GET /api/leagues`, `GET /api/clubs?league=` | Filter options |
-
-`position` is one of `GKP`, `DEF`, `MID`, `WNG`, `STR`. `role` is a role name from the table above, for example `Poacher`.
-
 ## Project layout
 
 ```
@@ -250,7 +238,6 @@ db/
   setup-local.ps1       creates the local database user and databases
 pipeline/
   load_db.py            runs the model and writes everything to PostgreSQL
-  app.py                FastAPI app (to be replaced by /api)
   footstats/
     data.py             loading, transfer merging, striker/winger split, per-90 helpers
     roles.py            style signals, full-back/centre-back split, role assignment
@@ -261,9 +248,11 @@ pipeline/
     scouting_models.py  cosine-similarity search, value-gap model with SHAP, undervalued gems
     similar.py          similar-player search
     model.py            expected goal-contributions model, evaluation, xG benchmark
-    service.py          builds everything once, answers queries
+    service.py          builds every analysis once (used by the analysis tests)
   tests/
-frontend/               React (Vite) app
+web/                    React + Vite + TypeScript front end
+  src/pages/            players, player, clubs, squad gaps, compare, over/under
+  src/components/       layout, charts, gauge and pitch graphics, loading and empty states
 data/                   FBref 2024/25 top-five-league player stats CSV, matched market values,
                         and the two Transfermarkt downloads they were built from
 ```
@@ -272,7 +261,7 @@ data/                   FBref 2024/25 top-five-league player stats CSV, matched 
 
 - **No league-strength adjustment.** A rating of 70 in Ligue 1 and in the Premier League are treated the same.
 - **One season,** so there's no way to test whether a rating predicts next season's performance or a transfer.
-- **Market values are estimates, and only the offline scouting model uses them.** Transfermarkt values are crowd-informed estimates, not fees paid, and there is no contract or wage data. 177 players have no price (mostly players with few minutes, or at promoted clubs the source did not revalue). The app's own "players worth a bid" list still uses on-pitch output and age only.
+- **Market values are estimates, and only the offline scouting model uses them.** Transfermarkt values are crowd-informed estimates, not fees paid, and there is no contract or wage data. 177 players have no price (mostly players with few minutes, or at promoted clubs the source did not revalue). The web app doesn't show market values.
 - **Roles are inferred, not observed.** There is no footedness, pitch-position or pressing data, so an "inverted" winger or full-back is recognised by what they do (shooting or passing inside rather than crossing), not by which foot or flank they use. Every player is forced into one role even when they do two jobs: Manuel Neuer and Ederson both sweep and build play, and land on either side by a small margin.
 - **Team style leaks into roles.** Full-backs at possession-heavy clubs (Achraf Hakimi, Nuno Mendes) pass more and cross less per touch and come out as inverted; full-backs in deep-defending teams can come out as wide centre-backs. There is no "defensive full-back" role, so cautious full-backs are counted as inverted.
 - **FBref positions are broad.** Wide forwards FBref lists as midfielders first (Ademola Lookman, Amad Diallo) are treated as midfielders and mostly land in box-to-box, where they top the ratings; Aurélien Tchouaméni is listed as a defender.

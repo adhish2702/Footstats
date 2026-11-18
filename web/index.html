@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0A0F0D" />
+    <meta name="description" content="FootStats: 2024/25 player analytics for Europe's top five leagues, with a model of expected goals + assists per 90." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>FootStats</title>
+    <script>
+      // Apply the saved theme before first paint (dark unless the visitor chose light).
+      try { if (localStorage.getItem("footstats-theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
